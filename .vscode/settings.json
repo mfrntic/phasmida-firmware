@@ -1,0 +1,5 @@
+{
+  "C_Cpp.default.configurationProvider": "platformio.platformio-ide",
+  "C_Cpp.errorSquiggles": "enabled",
+  "platformio-ide.autoRebuildAutocompleteIndex": true
+}

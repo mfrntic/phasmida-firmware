@@ -1,0 +1,37 @@
+#pragma once
+
+#include <Arduino.h>
+#include <M5GFX.h>
+#include "IScreen.h"
+#include "MeasurementCard.h"
+
+// DLight display screen showing illuminance in lux.
+class DLightScreen : public IScreen {
+ public:
+  DLightScreen();
+  ~DLightScreen() override = default;
+
+  void notifyNewReadings(float lux);
+
+  void setNavInfo(int myIdx, int total) override;
+  void onEnter() override;
+  void onExit() override;
+  void draw() override;
+  void drawIntoSprite(LGFX_Sprite& sp) override;
+  void onUpdate() override;
+  void onBtnB() override;
+
+ private:
+  template<typename GFX>
+  void _render(GFX& gfx, bool forceFull);
+
+  bool _active = false;
+  uint32_t _lastDrawMs = 0;
+  static constexpr uint32_t kDrawIntervalMs = 2000;
+  bool _needsFullClear = true;
+
+  int _myIndex = 0;
+  int _totalScreens = 0;
+
+  ui::MeasurementCard _cardLux{30, 24, 282, 190};
+};
