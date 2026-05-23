@@ -26,9 +26,12 @@ void MqttClient::begin(const MqttConfig& cfg) {
   _nextReconnectAt  = 0;
   _instance         = this;
 
-  // TLS broker endpoint: skip certificate validation for now (dev/staging).
   if (_cfg.port == 8883) {
-    _wifi.setInsecure();
+    // TLS broker endpoint: skip certificate validation for now (dev/staging).
+    _wifiSecure.setInsecure();
+    _client.setClient(_wifiSecure);
+  } else {
+    _client.setClient(_wifi);
   }
 
   _client.setServer(_cfg.host.c_str(), _cfg.port);

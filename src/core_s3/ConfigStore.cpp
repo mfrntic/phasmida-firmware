@@ -31,7 +31,7 @@ void ConfigStore::loadDefaults() {
   // Migrate old/incorrect broker settings.
   String mqttHost = _prefs.getString(AppConfig::kNvsMqttHost, "");
   uint16_t mqttPort = _prefs.getUShort(AppConfig::kNvsMqttPort, 0);
-  if (mqttHost == "10.0.2.2" || mqttHost == "phasmida.eu" || mqttPort == 8883) {
+  if (mqttHost == "10.0.2.2") {
     _prefs.putString(AppConfig::kNvsMqttHost, AppConfig::kDefaultMqttHost);
     _prefs.putUShort(AppConfig::kNvsMqttPort, AppConfig::kMqttDefaultPort);
   }

@@ -2,10 +2,10 @@
 
 #include <stdint.h>
 
-#include "secrets.example.h"
 #if __has_include("secrets.local.h")
 #include "secrets.local.h"
 #endif
+#include "secrets.example.h"
 
 namespace AppConfig {
 

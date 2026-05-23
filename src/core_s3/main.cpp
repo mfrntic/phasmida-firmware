@@ -722,6 +722,7 @@ void setup() {
     mc.clientId          = g_identity.mqttClientId();
     mc.username          = g_identity.macSlug();
     mc.password          = AppConfig::kCoreDeviceApiKey;
+    logf("MQTT auth diag: username='%s' key_len=%u", mc.username.c_str(), static_cast<unsigned>(mc.password.length()));
     mc.statusTopicForLwt = g_identity.statusTopic();
     mc.willPayload       = "{\"state\":\"offline\",\"ts\":0,\"reason\":\"unexpected\"}";
     mc.keepAliveSec      = AppConfig::kMqttKeepAliveSec;

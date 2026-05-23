@@ -105,8 +105,8 @@ CameraConfig CameraConfigStore::load() const {
   cfg.mqttHost     = _prefs.getString(CamConfig::kNvsMqttHost, String(CamConfig::kDefaultMqttHost));
   cfg.mqttPort     = _prefs.getUShort(CamConfig::kNvsMqttPort, CamConfig::kDefaultMqttPort);
 
-  // Migrate stale NVS values (e.g. port 8883 saved from a previous firmware build)
-  if (cfg.mqttHost == "phasmida.eu" || cfg.mqttPort == 8883) {
+  // Migrate stale legacy broker settings to current defaults.
+  if (cfg.mqttHost == "10.0.2.2") {
     cfg.mqttHost = String(CamConfig::kDefaultMqttHost);
     cfg.mqttPort = CamConfig::kDefaultMqttPort;
     _prefs.putString(CamConfig::kNvsMqttHost, cfg.mqttHost);

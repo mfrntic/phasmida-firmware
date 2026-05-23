@@ -39,7 +39,8 @@ public:
   void onStatusChange(StatusCallback cb);
 
 private:
-  WiFiClientSecure _wifi;
+  WiFiClient       _wifi;
+  WiFiClientSecure _wifiSecure;
   PubSubClient  _client;
   MqttConfig      _cfg;
   uint32_t        _reconnectDelayMs = 0;

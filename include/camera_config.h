@@ -3,10 +3,10 @@
 #include <stdint.h>
 #include "esp_camera.h"
 
-#include "secrets.example.h"
 #if __has_include("secrets.local.h")
 #include "secrets.local.h"
 #endif
+#include "secrets.example.h"
 
 namespace CamConfig {
 
@@ -29,7 +29,7 @@ constexpr uint32_t kWsReconnectMaxMs     = 60000;  // cap at 60 s
 // ── MQTT (command channel for camera quality control) ────────────────────────
 // Camera MQTT login uses kDeviceApiKey (see timer_camera/main.cpp).
 constexpr const char* kDefaultMqttHost   = "api.phasmida.eu";
-constexpr uint16_t    kDefaultMqttPort   = 1883;   // plain TCP (broker does not expose TLS externally)
+constexpr uint16_t    kDefaultMqttPort   = 1883;
 constexpr uint16_t    kMqttKeepAliveSec  = 60;
 constexpr uint8_t     kMqttQos           = 1;
 constexpr uint32_t    kMqttReconnectBaseDelayMs    = 1000;

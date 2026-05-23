@@ -42,6 +42,13 @@ void MqttClient::begin(const MqttConfig& cfg) {
   _nextReconnectAt  = 0;
   _instance         = this;
 
+  if (_cfg.port == 8883) {
+    _wifiSecure.setInsecure();
+    _client.setClient(_wifiSecure);
+  } else {
+    _client.setClient(_wifi);
+  }
+
   _client.setServer(_cfg.host.c_str(), _cfg.port);
   _client.setCallback(_rawCallback);
   _client.setBufferSize(_cfg.bufferSize);
