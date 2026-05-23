@@ -14,7 +14,7 @@ namespace CamConfig {
 constexpr uint32_t    kWifiConnectTimeoutMs    = 20000;
 constexpr uint32_t    kWifiReconnectIntervalMs = 30000;
 constexpr const char* kProvisioningApPrefix    = "Phasmida-Cam";
-constexpr const char* kProvisioningApPassword  = PHASMIDA_CAM_PROVISIONING_AP_PASSWORD;
+constexpr const char* kProvisioningApPassword  = "phasmida123";
 
 // ── Device identity / backend ─────────────────────────────────────────────────
 constexpr const char* kDeviceApiKey = PHASMIDA_CAM_DEVICE_API_KEY;

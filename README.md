@@ -39,9 +39,7 @@ Copy-Item include\secrets.example.h include\secrets.local.h
 ```c
 #pragma once
 
-#define PHASMIDA_APP_MQTT_API_KEY "<core-device-api-key>"
-#define PHASMIDA_APP_DEFAULT_WIFI_SSID "<wifi-ssid>"
-#define PHASMIDA_APP_DEFAULT_WIFI_PASSWORD "<wifi-password>"
+#define PHASMIDA_CORE_DEVICE_API_KEY "<core-device-api-key>"
 
 #define PHASMIDA_CAM_DEVICE_API_KEY "<camera-device-api-key>"
 ```
@@ -78,7 +76,7 @@ Configuration precedence is:
 
 1. compile-time local overrides from include\secrets.local.h
 2. runtime values stored in NVS
-3. tracked public-safe defaults from include\secrets.example.h
+3. tracked public-safe defaults from app/camera config headers
 
 This keeps public repository safe while preserving existing firmware behavior.
 

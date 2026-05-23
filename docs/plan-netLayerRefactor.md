@@ -320,7 +320,7 @@ void setup() {
   if (wifiOk) {
     MqttConfig mc{
       g_config.mqttHost, g_config.mqttPort,
-      g_identity.mqttClientId(), g_identity.macSlug(), AppConfig::kMqttApiKey,
+      g_identity.mqttClientId(), g_identity.macSlug(), AppConfig::kCoreDeviceApiKey,
       g_identity.statusTopic(), R"({"state":"offline","ts":0,"reason":"unexpected"})",
       AppConfig::kMqttKeepAliveSec, 1024
     };

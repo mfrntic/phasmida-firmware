@@ -721,7 +721,7 @@ void setup() {
     mc.port              = g_runtimeCfg.mqttPort;
     mc.clientId          = g_identity.mqttClientId();
     mc.username          = g_identity.macSlug();
-    mc.password          = AppConfig::kMqttApiKey;
+    mc.password          = AppConfig::kCoreDeviceApiKey;
     mc.statusTopicForLwt = g_identity.statusTopic();
     mc.willPayload       = "{\"state\":\"offline\",\"ts\":0,\"reason\":\"unexpected\"}";
     mc.keepAliveSec      = AppConfig::kMqttKeepAliveSec;

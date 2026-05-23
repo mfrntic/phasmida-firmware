@@ -26,14 +26,14 @@ constexpr uint8_t kMqttQos = 1;
 constexpr int kApiVersion = 1;
 
 // Compile-time credentials — username is MAC slug (runtime), password is API key.
-constexpr const char* kMqttApiKey = PHASMIDA_APP_MQTT_API_KEY;
+constexpr const char* kCoreDeviceApiKey = PHASMIDA_CORE_DEVICE_API_KEY;
 constexpr const char* kFwVersion = "1.0.0";
 
 // Bootstrap defaults used only when values are missing in NVS.
-constexpr const char* kDefaultWifiSsid = PHASMIDA_APP_DEFAULT_WIFI_SSID;
-constexpr const char* kDefaultWifiPassword = PHASMIDA_APP_DEFAULT_WIFI_PASSWORD;
+constexpr const char* kDefaultWifiSsid = "";
+constexpr const char* kDefaultWifiPassword = "";
 constexpr const char* kProvisioningApPrefix  = "Phasmida-Setup";
-constexpr const char* kProvisioningApPassword = PHASMIDA_APP_PROVISIONING_AP_PASSWORD;
+constexpr const char* kProvisioningApPassword = "phasmida123";
 constexpr const char* kDefaultMqttHost = "api.phasmida.eu";
 
 // NVS namespace and keys.
