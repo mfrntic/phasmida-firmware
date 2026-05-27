@@ -58,3 +58,15 @@ Include in PR description:
 - why it changed
 - how it was tested
 - rollback plan
+
+## Licensing of contributions
+
+This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+By submitting a pull request or any other contribution, you agree that:
+
+- Your contribution is your own original work (or you have the right to submit it).
+- You license your contribution to the project under the same PolyForm Noncommercial License 1.0.0 as the rest of the codebase.
+- You grant the project maintainer the right to also distribute your contribution under a separate commercial license, so the project can continue to offer commercial licensing to third parties without fragmenting the codebase.
+
+If you cannot agree to these terms, please do not submit a contribution.
