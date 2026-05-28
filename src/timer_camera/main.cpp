@@ -19,6 +19,7 @@ enum class FwState : uint8_t {
   CAMERA_INIT,
   WS_CONNECTING,
   STREAMING,
+  STREAM_PAUSED,
   AUTH_FAILED,         // 4401 received — wait for credential update
   CAMERA_INIT_FAILED,
 };
@@ -31,6 +32,7 @@ static CameraManager     g_camera;
 static WsCameraClient    g_wsClient;
 static MqttClient        g_mqtt;
 static FwState           g_state = FwState::BOOT;
+static bool              g_streamEnabled = true;
 static uint8_t           g_consecutiveDnsFailures = 0;
 static bool              g_forceWifiReconnectPending = false;
 
@@ -209,7 +211,7 @@ static void handleMqttCommand(const String& topicStr, const String& payloadStr) 
     // ACK success
     publishCommandAck(cmdId, "ok", nullptr, resultJson);
 
-    // Trigger camera reinit: close WebSocket and go back to CAMERA_INIT
+    // Trigger camera reinit only while streaming is enabled.
     Serial.printf("[CAM] Quality/tuning change requested: quality=%d frameSize=%d sharpness=%d denoise=%d lenc=%d rawGma=%d aec2=%d wpc=%d bpc=%d gainCeiling=%d\n",
             jpegQuality,
             frameSize,
@@ -221,9 +223,60 @@ static void handleMqttCommand(const String& topicStr, const String& payloadStr) 
             wpc,
             bpc,
             gainCeiling);
-    Serial.println("[CAM] Disconnecting WebSocket to reinitialize camera...");
-    g_wsClient.disconnect();  // Close the WebSocket connection
-    g_state = FwState::CAMERA_INIT;  // Trigger camera reinitialization
+    if (g_streamEnabled) {
+      Serial.println("[CAM] Disconnecting WebSocket to reinitialize camera...");
+      g_wsClient.disconnect();  // Close the WebSocket connection
+      g_state = FwState::CAMERA_INIT;  // Trigger camera reinitialization
+    } else {
+      Serial.println("[CAM] Stream is paused — quality update will apply on next stream-start");
+    }
+    _markCmdIdSeen(cmdId);
+    return;
+  }
+
+  if (type == "stream-stop") {
+    if (g_state == FwState::AUTH_FAILED) {
+      publishCommandAck(cmdId, "rejected", "auth_failed");
+      _markCmdIdSeen(cmdId);
+      return;
+    }
+
+    if (g_streamEnabled) {
+      g_streamEnabled = false;
+      g_wsClient.disconnect();
+      g_state = FwState::STREAM_PAUSED;
+    }
+
+    char resultJson[96];
+    snprintf(resultJson, sizeof(resultJson),
+             "{\"streamEnabled\":false,\"appliedAt\":%lu}",
+             millis());
+    publishCommandAck(cmdId, "ok", nullptr, resultJson);
+    _markCmdIdSeen(cmdId);
+    return;
+  }
+
+  if (type == "stream-start") {
+    if (g_state == FwState::AUTH_FAILED) {
+      publishCommandAck(cmdId, "rejected", "auth_failed");
+      _markCmdIdSeen(cmdId);
+      return;
+    }
+
+    if (!g_streamEnabled) {
+      g_streamEnabled = true;
+      if (g_wifi.isConnected()) {
+        g_state = FwState::CAMERA_INIT;
+      } else {
+        g_state = FwState::WIFI_CONNECTING;
+      }
+    }
+
+    char resultJson[95];
+    snprintf(resultJson, sizeof(resultJson),
+             "{\"streamEnabled\":true,\"appliedAt\":%lu}",
+             millis());
+    publishCommandAck(cmdId, "ok", nullptr, resultJson);
     _markCmdIdSeen(cmdId);
     return;
   }
@@ -354,7 +407,7 @@ void loop() {
       // g_mqtt.loop() u STREAMING stanju nastavlja pokušaje u pozadini.
       Serial.println("[MQTT] Connecting (non-blocking)...");
       g_mqtt.connect();  // inicijalni pokušaj; reconnect automatski kroz loop()
-      g_state = FwState::CAMERA_INIT;
+      g_state = g_streamEnabled ? FwState::CAMERA_INIT : FwState::STREAM_PAUSED;
       break;
     }
 
@@ -482,6 +535,11 @@ void loop() {
 
     // ── WS_CONNECTING ────────────────────────────────────────────────────────
     case FwState::WS_CONNECTING: {
+      if (!g_streamEnabled) {
+        g_state = FwState::STREAM_PAUSED;
+        break;
+      }
+
       String host;
       uint16_t port;
       bool useTls;
@@ -493,6 +551,12 @@ void loop() {
 
     // ── STREAMING ────────────────────────────────────────────────────────────
     case FwState::STREAMING: {
+      if (!g_streamEnabled) {
+        g_wsClient.disconnect();
+        g_state = FwState::STREAM_PAUSED;
+        break;
+      }
+
       if (g_forceWifiReconnectPending) {
         Serial.println("[WIFI] Executing forced reconnect after repeated DNS failures");
         g_wsClient.disconnect();
@@ -508,6 +572,9 @@ void loop() {
 
       // Process MQTT commands (set-camera-quality, etc.)
       g_mqtt.loop();
+      if (g_state != FwState::STREAMING) {
+        break;
+      }
 
       g_wsClient.loop();
 
@@ -536,6 +603,25 @@ void loop() {
 
       g_camera.releaseFrame();
       g_wsClient.loop();  // flush any server close/error received during capture
+      break;
+    }
+
+    // ── STREAM_PAUSED ───────────────────────────────────────────────────────
+    case FwState::STREAM_PAUSED: {
+      if (g_forceWifiReconnectPending) {
+        Serial.println("[WIFI] Executing forced reconnect after repeated DNS failures");
+        g_state = FwState::WIFI_CONNECTING;
+        break;
+      }
+
+      if (!g_wifi.isConnected()) {
+        Serial.println("[WIFI] Connection lost while stream paused — reconnecting");
+        g_state = FwState::WIFI_CONNECTING;
+        break;
+      }
+
+      // Keep command channel alive so cloud can resume streaming.
+      g_mqtt.loop();
       break;
     }
 

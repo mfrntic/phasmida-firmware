@@ -148,7 +148,7 @@ Normativno iz backend koda vrijedi:
 - route path je `/ws/camera/:slug`
 - `apiKey` se salje kao query parametar
 - backend ne ocekuje auth header ni cookie
-- backend ne koristi MQTT za kameru
+- backend ne koristi MQTT za ingest frameova (WS je jedini transport za video)
 
 ### Backend auth ponasanje
 
@@ -247,6 +247,22 @@ Firmware treba implementirati ovu politiku:
 - ako `pong` ne stigne unutar 60 sekundi od zadnjeg uspjesnog heartbeat signala, firmware treba sam zatvoriti socket i uci u reconnect
 
 Ovo je firmware-side policy za robusnost. Backend kod trenutno samo reagira na ping/pong dogadaje koje primi.
+
+### Cloud stream kontrola preko MQTT cmd kanala
+
+U ovom firmwareu `stream-stop` i `stream-start` dolaze preko standardnog device MQTT command topica (`phasmida/{slug}/cmd`).
+
+- `stream-stop`
+  - zaustavlja stream i drzi ga zaustavljenim dok ne stigne `stream-start`
+  - ponovljeni `stream-stop` je idempotentan (`ack.status = ok`)
+- `stream-start`
+  - ponovo pokrece postojeći init tok (`CAMERA_INIT -> WS_CONNECTING -> STREAMING`)
+  - ponovljeni `stream-start` je idempotentan (`ack.status = ok`)
+
+Napomene:
+- stop/start stanje je runtime-only (ne sprema se u NVS)
+- nakon reboota uredaj se vraca na default `stream ON`
+- `AUTH_FAILED` (4401) je i dalje terminalno stanje za WS credentials; komande za stream kontrolu se u tom stanju odbijaju
 
 ---
 

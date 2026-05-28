@@ -315,6 +315,27 @@ Polja:
 - `color`: slobodan string (firmware mapira što podržava).
 - `durationMs`: 0 = trajno dok ne stigne nova `set-led` komanda.
 
+#### `stream-stop`
+```json
+{ "type": "stream-stop", "params": {} }
+```
+- Zaustavlja camera streaming i drži ga zaustavljenim dok ne stigne `stream-start`.
+- Komanda je idempotentna: ako je stream već zaustavljen, firmware vraća `status: "ok"`.
+- Preporučeni `result` u ack-u:
+  - `streamEnabled`: `false`
+  - `appliedAt`: timestamp izvršenja na uređaju
+
+#### `stream-start`
+```json
+{ "type": "stream-start", "params": {} }
+```
+- Pokreće camera streaming ako je prethodno zaustavljen.
+- Komanda je idempotentna: ako je stream već aktivan, firmware vraća `status: "ok"`.
+- Firmware nakon prihvata komande ulazi u postojeći init tok (`CAMERA_INIT` -> `WS_CONNECTING` -> `STREAMING`).
+- Preporučeni `result` u ack-u:
+  - `streamEnabled`: `true`
+  - `appliedAt`: timestamp izvršenja na uređaju
+
 #### Reserved (nije implementirano u v1)
 - `firmware-update` — rezervirano, doći će s OTA infrastrukturom.
 - `set-light` — implementirano u fw `8bb5f56`; vidi `docs/set-light-command.md` za Cloud integracijsku specifikaciju.
