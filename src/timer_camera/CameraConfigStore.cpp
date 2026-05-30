@@ -10,6 +10,9 @@ bool CameraConfigStore::begin() {
     // Migration v4: raise default frame size to SVGA (800x600).
     // Migration v5: fix JPEG scale misunderstanding (lower value means higher quality).
     // Migration v6: seed OV3660 tuning defaults to NVS.
+    // Migration v7: seed camera orientation defaults to NVS.
+    // Migration v8: promote untouched devices from safe defaults to preferred high quality defaults.
+    // Migration v9: seed frame delay default.
     uint8_t qualityVer = _prefs.getUChar(CamConfig::kNvsQualityVer, 0);
     if (qualityVer < 1) {
       _prefs.putUChar(CamConfig::kNvsJpegQuality, CamConfig::kDefaultJpegQuality);
@@ -84,6 +87,38 @@ bool CameraConfigStore::begin() {
                     CamConfig::kDefaultBpc,
                     CamConfig::kDefaultGainCeiling);
     }
+
+    if (qualityVer < 7) {
+      _prefs.putUChar(CamConfig::kNvsVFlip, CamConfig::kDefaultVFlip);
+      _prefs.putUChar(CamConfig::kNvsHMirror, CamConfig::kDefaultHMirror);
+      _prefs.putUChar(CamConfig::kNvsQualityVer, 7);
+      Serial.printf("[CameraConfigStore] Migration v7: camera orientation seeded (vflip=%u hmirror=%u)\n",
+                    CamConfig::kDefaultVFlip,
+                    CamConfig::kDefaultHMirror);
+    }
+
+    if (qualityVer < 8) {
+      uint8_t storedQuality = _prefs.getUChar(CamConfig::kNvsJpegQuality, CamConfig::kSafeJpegQuality);
+      uint8_t storedFrameSize = _prefs.getUChar(CamConfig::kNvsFrameSize, CamConfig::kSafeFrameSize);
+      if (storedQuality == CamConfig::kSafeJpegQuality &&
+          storedFrameSize == CamConfig::kSafeFrameSize) {
+        _prefs.putUChar(CamConfig::kNvsJpegQuality, CamConfig::kDefaultJpegQuality);
+        _prefs.putUChar(CamConfig::kNvsFrameSize, CamConfig::kDefaultFrameSize);
+        Serial.printf("[CameraConfigStore] Migration v8: preferred camera defaults applied quality=%u frameSize=%u\n",
+                      CamConfig::kDefaultJpegQuality,
+                      CamConfig::kDefaultFrameSize);
+      }
+      _prefs.putUChar(CamConfig::kNvsQualityVer, 8);
+    }
+
+    if (qualityVer < 9) {
+      if (!_prefs.isKey(CamConfig::kNvsFrameDelay)) {
+        _prefs.putUShort(CamConfig::kNvsFrameDelay, CamConfig::kDefaultFrameDelay);
+        Serial.printf("[CameraConfigStore] Migration v9: frame delay seeded %u ms\n",
+                      CamConfig::kDefaultFrameDelay);
+      }
+      _prefs.putUChar(CamConfig::kNvsQualityVer, 9);
+    }
   }
   return _open;
 }
@@ -132,6 +167,11 @@ void CameraConfigStore::setFrameSize(uint8_t frameSize) {
   _prefs.putUChar(CamConfig::kNvsFrameSize, frameSize);
 }
 
+void CameraConfigStore::setFrameDelay(uint16_t frameDelayMs) {
+  if (!_open) return;
+  _prefs.putUShort(CamConfig::kNvsFrameDelay, frameDelayMs);
+}
+
 uint8_t CameraConfigStore::getJpegQuality() const {
   if (!_open) return CamConfig::kDefaultJpegQuality;
   return _prefs.getUChar(CamConfig::kNvsJpegQuality, CamConfig::kDefaultJpegQuality);
@@ -140,6 +180,11 @@ uint8_t CameraConfigStore::getJpegQuality() const {
 uint8_t CameraConfigStore::getFrameSize() const {
   if (!_open) return CamConfig::kDefaultFrameSize;
   return _prefs.getUChar(CamConfig::kNvsFrameSize, CamConfig::kDefaultFrameSize);
+}
+
+uint16_t CameraConfigStore::getFrameDelay() const {
+  if (!_open) return CamConfig::kDefaultFrameDelay;
+  return _prefs.getUShort(CamConfig::kNvsFrameDelay, CamConfig::kDefaultFrameDelay);
 }
 
 void CameraConfigStore::setSharpness(int8_t sharpness) {
@@ -182,6 +227,16 @@ void CameraConfigStore::setGainCeiling(uint8_t gainCeiling) {
   _prefs.putUChar(CamConfig::kNvsGainCeiling, gainCeiling);
 }
 
+void CameraConfigStore::setVFlip(bool enabled) {
+  if (!_open) return;
+  _prefs.putUChar(CamConfig::kNvsVFlip, enabled ? 1 : 0);
+}
+
+void CameraConfigStore::setHMirror(bool enabled) {
+  if (!_open) return;
+  _prefs.putUChar(CamConfig::kNvsHMirror, enabled ? 1 : 0);
+}
+
 int8_t CameraConfigStore::getSharpness() const {
   if (!_open) return CamConfig::kDefaultSharpness;
   return _prefs.getChar(CamConfig::kNvsSharpness, CamConfig::kDefaultSharpness);
@@ -220,6 +275,16 @@ bool CameraConfigStore::getBpc() const {
 uint8_t CameraConfigStore::getGainCeiling() const {
   if (!_open) return CamConfig::kDefaultGainCeiling;
   return _prefs.getUChar(CamConfig::kNvsGainCeiling, CamConfig::kDefaultGainCeiling);
+}
+
+bool CameraConfigStore::getVFlip() const {
+  if (!_open) return CamConfig::kDefaultVFlip != 0;
+  return _prefs.getUChar(CamConfig::kNvsVFlip, CamConfig::kDefaultVFlip) != 0;
+}
+
+bool CameraConfigStore::getHMirror() const {
+  if (!_open) return CamConfig::kDefaultHMirror != 0;
+  return _prefs.getUChar(CamConfig::kNvsHMirror, CamConfig::kDefaultHMirror) != 0;
 }
 
 void CameraConfigStore::clear() {

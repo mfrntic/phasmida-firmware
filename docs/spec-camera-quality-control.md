@@ -18,6 +18,8 @@ This document defines the MQTT command interface for dynamically controlling **T
 
 The mechanism follows the same command-response pattern as other cloud-driven controls (e.g., RGB set-light commands), enabling real-time adjustment of streaming quality based on network conditions, user preferences, or power constraints.
 
+Current firmware now aims for a higher preferred quality profile by default, while still keeping a safe fallback profile if camera init or warmup fails.
+
 ---
 
 ## Quick Start
@@ -58,6 +60,7 @@ The mechanism follows the same command-response pattern as other cloud-driven co
   "params": {
     "jpegQuality": 12,
     "frameSize": 9,
+    "frameDelay": 500,
     "sharpness": 2,
     "denoise": 0,
     "lenc": 1,
@@ -77,7 +80,7 @@ The mechanism follows the same command-response pattern as other cloud-driven co
 | `cmdId` | string | Unique command ID (e.g., ULID, UUID). Used for deduplication. |
 | `type` | string | Must be `"set-camera-quality"` |
 | `params.jpegQuality` | int | JPEG quality 0–63, where lower = better quality, larger file |
-| `params.frameSize` | int | Frame size enum: 5, 8, 9, or 10 (see table below) |
+| `params.frameSize` | int | Frame size enum: 5, 8, 9, 10, 12, or 13 (see table below) |
 
 #### Optional Tuning Fields
 
@@ -91,6 +94,7 @@ The mechanism follows the same command-response pattern as other cloud-driven co
 | `params.wpc` | int | 0 or 1 | White pixel correction enable flag |
 | `params.bpc` | int | 0 or 1 | Black pixel correction enable flag |
 | `params.gainCeiling` | int | 0..6 | `gainceiling_t` enum value |
+| `params.frameDelay` | int | 0..2000 | Delay between frames in ms (0 = max FPS) |
 
 If optional fields are omitted, firmware keeps previously persisted NVS values for those fields.
 
@@ -119,8 +123,10 @@ Important: on ESP32 camera driver, **lower value means better JPEG quality**.
 |-------|------------|------------|-------------------|----------|
 | 5 | QVGA | 320×240 | Smallest | Low bandwidth / debugging |
 | 8 | VGA | 640×480 | Medium | Conservative fallback |
-| **9** | **SVGA** | **800×600** | **Typical default** | **Recommended stable default** |
-| 10 | XGA | 1024×768 | Largest supported in current command | Best detail if stable |
+| 9 | SVGA | 800×600 | Safe fallback | Recommended recovery profile |
+| **10** | **XGA** | **1024×768** | **Preferred default** | **High detail baseline** |
+| 12 | SXGA | 1280×1024 | Very large | High detail if stable |
+| 13 | UXGA | 1600×1200 | Maximum exposed in current command | Best possible detail if stable |
 
 Important: these numeric values follow the actual `esp32-camera` enum mapping used by the current firmware, not the older draft mapping.
 
@@ -134,6 +140,18 @@ Important: these numeric values follow the actual `esp32-camera` enum mapping us
   "params": {
     "jpegQuality": 8,
     "frameSize": 10
+  }
+}
+```
+
+**Maximum Detail (best-effort):**
+```json
+{
+  "cmdId": "01JCAM444444444444444444",
+  "type": "set-camera-quality",
+  "params": {
+    "jpegQuality": 6,
+    "frameSize": 13
   }
 }
 ```
@@ -177,22 +195,63 @@ Important: these numeric values follow the actual `esp32-camera` enum mapping us
   "status": "ok",
   "ts": 1778145601000,
   "result": {
-    "jpegQuality": 12,
-    "frameSize": 9,
-    "sharpness": 2,
-    "denoise": 0,
-    "lenc": 1,
-    "rawGma": 1,
-    "aec2": 1,
-    "wpc": 1,
-    "bpc": 1,
-    "gainCeiling": 3,
+    "requested": {
+      "jpegQuality": 12,
+      "frameSize": 13
+    },
+    "status": "accepted_for_reinit",
     "appliedAt": 1778145601000
   }
 }
 ```
 
-**Meaning:** Settings have been validated, saved to NVS, and camera has started reinitialization. Streaming should resume shortly after WebSocket reconnect.
+**Meaning:** Settings are validated and persisted, and camera reinitialization has started. This ACK confirms command acceptance, not final effective profile.
+
+### Deferred Effective Profile Event
+
+After camera reinit completes, firmware publishes effective state on events topic.
+
+**Topic:** `phasmida/{slug}/events`
+
+**No fallback (requested applied):**
+```json
+{
+  "apiVersion": 1,
+  "msgId": "1717065000-74aa1f",
+  "macaddress": "AA:BB:CC:DD:EE:FF",
+  "ts": 1717065000,
+  "type": "camera-quality-applied",
+  "severity": "info",
+  "message": "Requested camera profile applied",
+  "details": {
+    "cmdId": "01JCAM8D2Y8AP9R5B7M4",
+    "requested": 13,
+    "applied": 13,
+    "jpegQuality": 12
+  }
+}
+```
+
+**Fallback happened:**
+```json
+{
+  "apiVersion": 1,
+  "msgId": "1717065000-2f91be",
+  "macaddress": "AA:BB:CC:DD:EE:FF",
+  "ts": 1717065000,
+  "type": "camera-quality-fallback",
+  "severity": "warning",
+  "message": "Requested camera profile was downgraded to a stable fallback",
+  "details": {
+    "cmdId": "01JCAM8D2Y8AP9R5B7M4",
+    "requested": 13,
+    "applied": 9,
+    "jpegQuality": 12
+  }
+}
+```
+
+**Frontend rule:** ACK marks command as accepted; final UI state must track the deferred event (`details.applied`).
 
 ### Rejected Response
 
@@ -217,7 +276,7 @@ Important: these numeric values follow the actual `esp32-camera` enum mapping us
   "ts": 1778145601000,
   "error": {
     "code": "invalid_frame_size",
-    "message": "frameSize must be one of: 5, 8, 9, 10"
+    "message": "frameSize must be one of: 5, 8, 9, 10, 12, 13"
   }
 }
 ```
@@ -227,7 +286,8 @@ Important: these numeric values follow the actual `esp32-camera` enum mapping us
 | Code | Meaning | Action |
 |------|---------|--------|
 | `invalid_jpeg_quality` | jpegQuality outside 0–63 range | Validate input before sending |
-| `invalid_frame_size` | frameSize not in {5, 8, 9, 10} | Use valid preset or educate user |
+| `invalid_frame_size` | frameSize not in {5, 8, 9, 10, 12, 13} | Use valid preset or educate user |
+| `invalid_frame_delay` | frameDelay outside 0..2000 range | Clamp or validate frameDelay before sending |
 | `invalid_sharpness` | sharpness outside -2..2 | Validate slider range before sending |
 | `invalid_denoise` | denoise outside 0..8 | Validate denoise preset before sending |
 | `invalid_boolean_tuning_flag` | one of lenc/rawGma/aec2/wpc/bpc is not 0 or 1 | Ensure boolean flags are encoded as 0/1 |
@@ -319,6 +379,7 @@ STREAMING
   - `wpc = 1`
   - `bpc = 1`
   - `gainCeiling = 3` (`GAINCEILING_16X`)
+  - `frameDelay = 0` (max FPS)
 
   This protects the deployed camera from getting stuck in a null-frame loop after an overly aggressive command.
 
@@ -333,7 +394,8 @@ Settings are **persisted in ESP32 NVS (non-volatile storage)**:
 ```cpp
 // Key names (firmware internal):
 "jpeg_quality"  → uint8_t (0–63)
-"frame_size"    → uint8_t (5, 8, 9, or 10)
+"frame_size"    → uint8_t (5, 8, 9, 10, 12, or 13)
+"frame_delay"   → uint16_t (0..2000 ms)
 "sharpness"     → int8_t (-2..2)
 "denoise"       → uint8_t (0..8)
 "lenc"          → uint8_t (0/1)
@@ -357,6 +419,7 @@ Settings are **persisted in ESP32 NVS (non-volatile storage)**:
   - `wpc` = 1
   - `bpc` = 1
   - `gainCeiling` = 3
+  - `frameDelay` = 0
 - Firmware may overwrite invalid or unstable runtime settings with safe defaults after failed warmup
 
 ---
@@ -420,14 +483,18 @@ function sendSetCameraQuality(cameraSlug, jpegQuality, frameSize) {
 **Before sending command:**
 
 ```javascript
-function validateQualityParams(jpegQuality, frameSize) {
+function validateQualityParams(jpegQuality, frameSize, frameDelay = 0) {
   if (jpegQuality < 0 || jpegQuality > 63) {
     throw new Error("jpegQuality must be 0–63");
   }
   
-  const validFrameSizes = [5, 8, 9, 10];
+  const validFrameSizes = [5, 8, 9, 10, 12, 13];
   if (!validFrameSizes.includes(frameSize)) {
     throw new Error(`frameSize must be one of: ${validFrameSizes.join(", ")}`);
+  }
+
+  if (!Number.isInteger(frameDelay) || frameDelay < 0 || frameDelay > 2000) {
+    throw new Error("frameDelay must be 0–2000");
   }
 
   return true;
@@ -482,8 +549,10 @@ function handleCameraAck(ackPayload) {
   <select id="frame-size" onchange="onFrameSizeChange(this.value)">
     <option value="5">QVGA (320×240) — Low Bandwidth</option>
     <option value="8">VGA (640×480) — Conservative</option>
-    <option value="9" selected>SVGA (800×600) — Recommended</option>
-    <option value="10">XGA (1024×768) — Best Detail</option>
+    <option value="9">SVGA (800×600) — Safe Fallback</option>
+    <option value="10" selected>XGA (1024×768) — Preferred Default</option>
+    <option value="12">SXGA (1280×1024) — High Detail</option>
+    <option value="13">UXGA (1600×1200) — Maximum Detail</option>
   </select>
   
   <!-- Status -->
@@ -497,6 +566,7 @@ function handleCameraAck(ackPayload) {
 ```javascript
 // Preset mappings
 const QUALITY_PRESETS = {
+  max:      { jpegQuality: 6,  frameSize: 13, label: "Maximum Detail" },
   high:     { jpegQuality: 8,  frameSize: 10, label: "High Quality" },
   balanced: { jpegQuality: 12, frameSize: 9,  label: "Balanced" },
   low:      { jpegQuality: 20, frameSize: 5,  label: "Low Bandwidth" }
@@ -571,7 +641,7 @@ function getQualityLabel(value) {
 }
 
 function updateQualityLabel(quality, frameSize) {
-  const frameSizeLabel = ({ 5: 'QVGA', 8: 'VGA', 9: 'SVGA', 10: 'XGA' })[frameSize] || '?';
+  const frameSizeLabel = ({ 5: 'QVGA', 8: 'VGA', 9: 'SVGA', 10: 'XGA', 12: 'SXGA', 13: 'UXGA' })[frameSize] || '?';
   document.getElementById('quality-label').textContent = 
     `${quality} (${getQualityLabel(quality)}) — ${frameSizeLabel}`;
 }
@@ -634,7 +704,7 @@ async function pollForAck(msgId, timeoutMs = 10000) {
 ### Frontend
 
 - [ ] Quality slider updates label correctly
-- [ ] Frame size selector shows all 4 options
+- [ ] Frame size selector shows all 6 options
 - [ ] Preset buttons send correct parameters
 - [ ] Spinner shows during command submission
 - [ ] Success message displays ACK result
@@ -696,7 +766,7 @@ async function pollForAck(msgId, timeoutMs = 10000) {
 - Requested combination initializes but cannot capture frames, so firmware falls back to safe defaults
 
 **Fix:**
-- Use frame sizes: 5 (QVGA), 8 (VGA), 9 (SVGA), 10 (XGA)
+- Use frame sizes: 5 (QVGA), 8 (VGA), 9 (SVGA), 10 (XGA), 12 (SXGA), 13 (UXGA)
 - Check firmware logs for init errors
 
 ### Issue: ACK says ok, but stream still looks unchanged
@@ -720,8 +790,9 @@ async function pollForAck(msgId, timeoutMs = 10000) {
 | Config | Frame | Frames/sec | Bandwidth |
 |--------|-------|-----------|-----------|
 | Q=20, QVGA | small | 10+ fps | low |
-| Q=12, SVGA | medium | typical default | moderate |
-| Q=8, XGA | large | lower fps | high |
+| Q=12, SVGA | medium | safe fallback | moderate |
+| Q=8, XGA | large | preferred default | high |
+| Q=6, UXGA | very large | lowest fps | very high |
 | Q=1, QVGA | may fail on current camera | n/a | unstable |
 
 ### CPU/Memory Constraints

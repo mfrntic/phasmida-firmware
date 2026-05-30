@@ -45,6 +45,7 @@ constexpr const char* kNvsApiKey    = "api_key";
 constexpr const char* kNvsWsBaseUrl = "ws_base_url";
 constexpr const char* kNvsJpegQuality = "jpeg_quality";  // Store quality 0–63
 constexpr const char* kNvsFrameSize    = "frame_size";   // Store framesize index
+constexpr const char* kNvsFrameDelay   = "frame_delay";  // Store inter-frame delay in ms (0..2000)
 constexpr const char* kNvsSharpness    = "sharpness";    // Store sensor sharpness (-2..2)
 constexpr const char* kNvsDenoise      = "denoise";      // Store sensor denoise (0..8)
 constexpr const char* kNvsLenc         = "lenc";         // Lens correction (0/1)
@@ -53,22 +54,30 @@ constexpr const char* kNvsAec2         = "aec2";         // AEC2 (0/1)
 constexpr const char* kNvsWpc          = "wpc";          // White pixel correction (0/1)
 constexpr const char* kNvsBpc          = "bpc";          // Black pixel correction (0/1)
 constexpr const char* kNvsGainCeiling  = "gain_ceil";    // Gain ceiling enum (0..6)
+constexpr const char* kNvsVFlip        = "vflip";        // Vertical image flip (0/1)
+constexpr const char* kNvsHMirror      = "hmirror";      // Horizontal image mirror (0/1)
 constexpr const char* kNvsMqttHost  = "mqtt_host";       // MQTT broker hostname
 constexpr const char* kNvsMqttPort  = "mqtt_port";       // MQTT broker port
 constexpr const char* kNvsQualityVer = "quality_ver";   // Migration version for quality defaults
 
 // ── Camera Quality / Resolution ──────────────────────────────────────────────
 // JPEG quality: 0–63, where lower value means better quality (larger frames)
-// Recommended default: 12 for clearly better visual quality.
-constexpr uint8_t kDefaultJpegQuality = 12;
+// Preferred default: 8 for high detail while staying within a practical range.
+constexpr uint8_t kDefaultJpegQuality = 8;
+// Safe fallback if preferred settings fail during camera init/warmup.
+constexpr uint8_t kSafeJpegQuality = 12;
 
 // Frame size enum values from esp_camera.h:
 //   FRAMESIZE_QVGA  = 5   (320×240, smallest)
 //   FRAMESIZE_VGA   = 8   (640×480, medium)
-//   FRAMESIZE_SVGA  = 9   (800×600, recommended)
-//   FRAMESIZE_XGA   = 10  (1024×768, very large)
+//   FRAMESIZE_SVGA  = 9   (800×600, safe fallback)
+//   FRAMESIZE_XGA   = 10  (1024×768, preferred default)
+//   FRAMESIZE_SXGA  = 12  (1280×1024, very large)
+//   FRAMESIZE_UXGA  = 13  (1600×1200, maximum exposed by this firmware)
 // We use numeric value directly to avoid circular include issues
-constexpr uint8_t kDefaultFrameSize = 9;  // FRAMESIZE_SVGA (800×600)
+constexpr uint8_t kDefaultFrameSize = 10;  // FRAMESIZE_XGA (1024×768)
+constexpr uint8_t kSafeFrameSize = 9;      // FRAMESIZE_SVGA (800×600)
+constexpr uint16_t kDefaultFrameDelay = 0; // 0 = max FPS
 
 // OV3660 tuning defaults
 constexpr int8_t  kDefaultSharpness = 2;                         // -2..2
@@ -79,6 +88,8 @@ constexpr uint8_t kDefaultAec2 = 1;                              // bool 0/1
 constexpr uint8_t kDefaultWpc = 1;                               // bool 0/1
 constexpr uint8_t kDefaultBpc = 1;                               // bool 0/1
 constexpr uint8_t kDefaultGainCeiling = static_cast<uint8_t>(GAINCEILING_16X);
+constexpr uint8_t kDefaultVFlip = 1;                             // bool 0/1, current upright housing default
+constexpr uint8_t kDefaultHMirror = 1;                           // bool 0/1, current upright housing default
 
 // ── Misc ─────────────────────────────────────────────────────────────────────
 constexpr const char* kFwVersion = "1.3.0";

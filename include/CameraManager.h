@@ -16,6 +16,8 @@ public:
   void setWpc(bool enabled) { _wpc = enabled; }
   void setBpc(bool enabled) { _bpc = enabled; }
   void setGainCeiling(uint8_t gainCeiling) { _gainCeiling = gainCeiling; }
+  void setVFlip(bool enabled) { _vflip = enabled; }
+  void setHMirror(bool enabled) { _hmirror = enabled; }
   
   // Initialise camera sensor and framebuffer allocator. Returns false on failure.
   bool init();
@@ -29,8 +31,8 @@ public:
 private:
   bool        _ready = false;
   camera_fb_t* _fb   = nullptr;
-  uint8_t _jpegQuality = 12;   // Lower value = better JPEG quality
-  uint8_t _frameSize = 9;      // Default 9 = FRAMESIZE_SVGA (800×600), can be set via setFrameSize()
+  uint8_t _jpegQuality = 8;    // Lower value = better JPEG quality
+  uint8_t _frameSize = 10;     // Default 10 = FRAMESIZE_XGA (1024×768), can be set via setFrameSize()
   int8_t _sharpness = 2;       // -2..2
   uint8_t _denoise = 0;        // 0..8
   bool _lenc = true;
@@ -38,5 +40,7 @@ private:
   bool _aec2 = true;
   bool _wpc = true;
   bool _bpc = true;
+  bool _vflip = true;
+  bool _hmirror = true;
   uint8_t _gainCeiling = static_cast<uint8_t>(GAINCEILING_16X);
 };

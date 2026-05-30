@@ -336,6 +336,20 @@ Polja:
   - `streamEnabled`: `true`
   - `appliedAt`: timestamp izvršenja na uređaju
 
+#### `set-camera-quality`
+```json
+{
+  "type": "set-camera-quality",
+  "params": { "jpegQuality": 12, "frameSize": 13 }
+}
+```
+- Mijenja traženi JPEG profil i pokreće camera reinit tok.
+- Ack `ok` potvrđuje da je zahtjev prihvaćen i spremljen (`result.status = accepted_for_reinit`).
+- Konačno effective stanje dolazi kao event na `phasmida/{slug}/events`:
+  - `type: camera-quality-applied` ako je `requested == applied`
+  - `type: camera-quality-fallback` ako je firmware morao spustiti frame size
+- Frontend i backend za prikaz stvarnog stanja koriste `details.applied` iz eventa kao source of truth.
+
 #### Reserved (nije implementirano u v1)
 - `firmware-update` — rezervirano, doći će s OTA infrastrukturom.
 - `set-light` — implementirano u fw `8bb5f56`; vidi `docs/set-light-command.md` za Cloud integracijsku specifikaciju.
@@ -354,7 +368,11 @@ Firmware **mora** odgovoriti ack-om za **svaku** primljenu komandu, bez obzira n
   "cmdId": "01HXYZK6H9B5O2Q3R6S8T0U1V4",
   "status": "ok",
   "ts": 1735000000000,
-  "result": { "telemetryIntervalMs": 60000 }
+  "result": {
+    "requested": { "jpegQuality": 12, "frameSize": 13 },
+    "status": "accepted_for_reinit",
+    "appliedAt": 1735000000000
+  }
 }
 ```
 
@@ -368,6 +386,10 @@ Polja:
 - `ts` — vrijeme izvršenja.
 - `result` (opcionalno) — povratni podaci specifični za komandu.
 - `error` (opcionalno) — `{ "code": "...", "message": "..." }` kod statusa `error` ili `rejected`.
+
+Napomena za asinkrone komande:
+- Kod komandi koje trebaju duži tok primjene (`set-camera-quality`), `status: ok` u ack-u znači accepted + queued for apply.
+- Effective rezultat je zaseban event na topicu `phasmida/{slug}/events`.
 
 ### Pravila ack/retry
 

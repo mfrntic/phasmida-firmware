@@ -77,6 +77,8 @@ bool CameraManager::init() {
     sensor->set_special_effect(sensor, 0);
     sensor->set_quality(sensor, _jpegQuality);
     sensor->set_framesize(sensor, static_cast<framesize_t>(_frameSize));
+    sensor->set_vflip(sensor, _vflip ? 1 : 0);
+    sensor->set_hmirror(sensor, _hmirror ? 1 : 0);
 
     // Timer Camera F uses OV3660 fisheye optics; this tuning improves edge clarity
     // and is runtime-configurable through persisted NVS values.
@@ -100,6 +102,10 @@ bool CameraManager::init() {
                     _bpc ? 1 : 0,
                     _gainCeiling);
     }
+    Serial.printf("[CAM] Orientation applied: rotation=%u deg (vflip=%u, hmirror=%u)\n",
+                  (_vflip && _hmirror) ? 180 : 0,
+                  _vflip ? 1 : 0,
+                  _hmirror ? 1 : 0);
   }
 
   Serial.printf("[CAM] Initialized with quality=%u (0-63, lower=better) and framesize=%u\n", _jpegQuality, _frameSize);

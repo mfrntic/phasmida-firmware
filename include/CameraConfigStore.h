@@ -21,8 +21,10 @@ public:
   // Camera quality management
   void setJpegQuality(uint8_t quality);  // 0–63
   void setFrameSize(uint8_t frameSize);  // FRAMESIZE_* enum value
+  void setFrameDelay(uint16_t frameDelayMs); // 0..2000 ms
   uint8_t getJpegQuality() const;
   uint8_t getFrameSize() const;
+  uint16_t getFrameDelay() const;
 
   // Camera sensor tuning management
   void setSharpness(int8_t sharpness);         // -2..2
@@ -33,6 +35,8 @@ public:
   void setWpc(bool enabled);
   void setBpc(bool enabled);
   void setGainCeiling(uint8_t gainCeiling);    // gainceiling_t enum value (0..6)
+  void setVFlip(bool enabled);
+  void setHMirror(bool enabled);
   int8_t getSharpness() const;
   uint8_t getDenoise() const;
   bool getLenc() const;
@@ -41,6 +45,8 @@ public:
   bool getWpc() const;
   bool getBpc() const;
   uint8_t getGainCeiling() const;
+  bool getVFlip() const;
+  bool getHMirror() const;
 
   void clear();
 

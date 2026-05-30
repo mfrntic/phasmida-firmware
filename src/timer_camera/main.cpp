@@ -35,6 +35,10 @@ static FwState           g_state = FwState::BOOT;
 static bool              g_streamEnabled = true;
 static uint8_t           g_consecutiveDnsFailures = 0;
 static bool              g_forceWifiReconnectPending = false;
+static uint8_t           g_lastRequestedFrameSize = CamConfig::kDefaultFrameSize;
+static uint8_t           g_lastAppliedFrameSize = CamConfig::kDefaultFrameSize;
+static uint8_t           g_lastAppliedJpegQuality = CamConfig::kDefaultJpegQuality;
+static String            g_lastQualityCmdId;
 
 constexpr uint8_t kDnsFailureWifiReconnectThreshold = 3;
 
@@ -84,6 +88,38 @@ static bool publishCommandAck(const String& cmdId, const char* status,
   return ok;
 }
 
+static bool publishCameraQualityEvent(const String& cmdId,
+                                      uint8_t requestedFrameSize,
+                                      uint8_t appliedFrameSize,
+                                      uint8_t jpegQuality) {
+  if (!g_mqtt.isConnected()) return false;
+
+  const bool isFallback = requestedFrameSize != appliedFrameSize;
+
+  JsonDocument event;
+  event["apiVersion"] = 1;
+  event["msgId"] = String(millis()) + "-" + String(static_cast<uint32_t>(esp_random()), HEX);
+  event["macaddress"] = g_identity.macDisplay();
+  event["ts"] = millis();
+  event["type"] = isFallback ? "camera-quality-fallback" : "camera-quality-applied";
+  event["severity"] = isFallback ? "warning" : "info";
+  event["message"] = isFallback
+      ? "Requested camera profile was downgraded to a stable fallback"
+      : "Requested camera profile applied";
+
+  JsonObject details = event["details"].to<JsonObject>();
+  details["cmdId"] = cmdId;
+  details["requested"] = requestedFrameSize;
+  details["applied"] = appliedFrameSize;
+  details["jpegQuality"] = jpegQuality;
+
+  String payload;
+  serializeJson(event, payload);
+  bool ok = g_mqtt.publish(g_identity.eventsTopic(), payload, false);
+  Serial.printf("[MQTT] Camera quality event: %s (cmdId=%s)\n", ok ? "ok" : "fail", cmdId.c_str());
+  return ok;
+}
+
 static void handleMqttCommand(const String& topicStr, const String& payloadStr) {
   if (topicStr != g_identity.cmdTopic()) {
     Serial.printf("[MQTT] Ignoring msg on topic: %s\n", topicStr.c_str());
@@ -116,6 +152,7 @@ static void handleMqttCommand(const String& topicStr, const String& payloadStr) 
     // Parse params
     int jpegQuality = cmd["params"]["jpegQuality"] | -1;
     int frameSize   = cmd["params"]["frameSize"]   | -1;
+    int frameDelay  = cmd["params"]["frameDelay"]  | static_cast<int>(g_configStore.getFrameDelay());
     int sharpness   = cmd["params"]["sharpness"]   | static_cast<int>(g_configStore.getSharpness());
     int denoise     = cmd["params"]["denoise"]     | static_cast<int>(g_configStore.getDenoise());
     int lenc        = cmd["params"]["lenc"]        | static_cast<int>(g_configStore.getLenc() ? 1 : 0);
@@ -137,7 +174,9 @@ static void handleMqttCommand(const String& topicStr, const String& payloadStr) 
       static_cast<uint8_t>(FRAMESIZE_QVGA),
       static_cast<uint8_t>(FRAMESIZE_VGA),
       static_cast<uint8_t>(FRAMESIZE_SVGA),
-      static_cast<uint8_t>(FRAMESIZE_XGA)
+      static_cast<uint8_t>(FRAMESIZE_XGA),
+      static_cast<uint8_t>(FRAMESIZE_SXGA),
+      static_cast<uint8_t>(FRAMESIZE_UXGA)
     };
     bool validSize = false;
     for (uint8_t sz : validFrameSizes) {
@@ -148,6 +187,12 @@ static void handleMqttCommand(const String& topicStr, const String& payloadStr) 
     }
     if (!validSize) {
       publishCommandAck(cmdId, "rejected", "invalid_frame_size");
+      _markCmdIdSeen(cmdId);
+      return;
+    }
+
+    if (frameDelay < 0 || frameDelay > 2000) {
+      publishCommandAck(cmdId, "rejected", "invalid_frame_delay");
       _markCmdIdSeen(cmdId);
       return;
     }
@@ -183,6 +228,7 @@ static void handleMqttCommand(const String& topicStr, const String& payloadStr) 
     // Save to NVS
     g_configStore.setJpegQuality(static_cast<uint8_t>(jpegQuality));
     g_configStore.setFrameSize(static_cast<uint8_t>(frameSize));
+    g_configStore.setFrameDelay(static_cast<uint16_t>(frameDelay));
     g_configStore.setSharpness(static_cast<int8_t>(sharpness));
     g_configStore.setDenoise(static_cast<uint8_t>(denoise));
     g_configStore.setLenc(lenc != 0);
@@ -192,29 +238,25 @@ static void handleMqttCommand(const String& topicStr, const String& payloadStr) 
     g_configStore.setBpc(bpc != 0);
     g_configStore.setGainCeiling(static_cast<uint8_t>(gainCeiling));
 
-    // Build result
-    char resultJson[256];
+    // Build result: command is accepted and queued for camera reinit.
+    char resultJson[192];
     snprintf(resultJson, sizeof(resultJson),
-         "{\"jpegQuality\":%d,\"frameSize\":%d,\"sharpness\":%d,\"denoise\":%d,\"lenc\":%d,\"rawGma\":%d,\"aec2\":%d,\"wpc\":%d,\"bpc\":%d,\"gainCeiling\":%d,\"appliedAt\":%lu}",
+         "{\"requested\":{\"jpegQuality\":%d,\"frameSize\":%d},\"status\":\"accepted_for_reinit\",\"appliedAt\":%lu}",
          jpegQuality,
          frameSize,
-         sharpness,
-         denoise,
-         lenc,
-         rawGma,
-         aec2,
-         wpc,
-         bpc,
-         gainCeiling,
          millis());
+
+    g_lastRequestedFrameSize = static_cast<uint8_t>(frameSize);
+    g_lastQualityCmdId = cmdId;
 
     // ACK success
     publishCommandAck(cmdId, "ok", nullptr, resultJson);
 
     // Trigger camera reinit only while streaming is enabled.
-    Serial.printf("[CAM] Quality/tuning change requested: quality=%d frameSize=%d sharpness=%d denoise=%d lenc=%d rawGma=%d aec2=%d wpc=%d bpc=%d gainCeiling=%d\n",
+    Serial.printf("[CAM] Quality/tuning change requested: quality=%d frameSize=%d frameDelay=%d sharpness=%d denoise=%d lenc=%d rawGma=%d aec2=%d wpc=%d bpc=%d gainCeiling=%d\n",
             jpegQuality,
             frameSize,
+      frameDelay,
             sharpness,
             denoise,
             lenc,
@@ -229,6 +271,44 @@ static void handleMqttCommand(const String& topicStr, const String& payloadStr) 
       g_state = FwState::CAMERA_INIT;  // Trigger camera reinitialization
     } else {
       Serial.println("[CAM] Stream is paused — quality update will apply on next stream-start");
+    }
+    _markCmdIdSeen(cmdId);
+    return;
+  }
+
+  if (type == "set-camera-orientation") {
+    int rotation = cmd["params"]["rotation"] | -1;
+
+    if (rotation != 0 && rotation != 180) {
+      publishCommandAck(cmdId, "rejected", "invalid_rotation");
+      _markCmdIdSeen(cmdId);
+      return;
+    }
+
+    bool vflip = rotation == 180;
+    bool hmirror = rotation == 180;
+    g_configStore.setVFlip(vflip);
+    g_configStore.setHMirror(hmirror);
+
+    char resultJson[96];
+    snprintf(resultJson, sizeof(resultJson),
+             "{\"rotation\":%d,\"vflip\":%d,\"hmirror\":%d,\"appliedAt\":%lu}",
+             rotation,
+             vflip ? 1 : 0,
+             hmirror ? 1 : 0,
+             millis());
+    publishCommandAck(cmdId, "ok", nullptr, resultJson);
+
+    Serial.printf("[CAM] Orientation change requested: rotation=%d deg (vflip=%d hmirror=%d)\n",
+                  rotation,
+                  vflip ? 1 : 0,
+                  hmirror ? 1 : 0);
+    if (g_streamEnabled) {
+      Serial.println("[CAM] Disconnecting WebSocket to reinitialize camera...");
+      g_wsClient.disconnect();
+      g_state = FwState::CAMERA_INIT;
+    } else {
+      Serial.println("[CAM] Stream is paused - orientation update will apply on next stream-start");
     }
     _markCmdIdSeen(cmdId);
     return;
@@ -413,7 +493,7 @@ void loop() {
 
     // ── CAMERA_INIT ──────────────────────────────────────────────────────────
     case FwState::CAMERA_INIT: {
-      // Load camera quality and tuning settings from NVS
+      // Load camera quality, orientation, and tuning settings from NVS
       uint8_t jpegQuality = g_configStore.getJpegQuality();
       uint8_t frameSize = g_configStore.getFrameSize();
       int8_t sharpness = g_configStore.getSharpness();
@@ -424,7 +504,9 @@ void loop() {
       bool wpc = g_configStore.getWpc();
       bool bpc = g_configStore.getBpc();
       uint8_t gainCeiling = g_configStore.getGainCeiling();
-        bool nonDefaultTuning =
+      bool vflip = g_configStore.getVFlip();
+      bool hmirror = g_configStore.getHMirror();
+      bool nonDefaultTuning =
           (sharpness != CamConfig::kDefaultSharpness) ||
           (denoise != CamConfig::kDefaultDenoise) ||
           (lenc != (CamConfig::kDefaultLenc != 0)) ||
@@ -433,16 +515,21 @@ void loop() {
           (wpc != (CamConfig::kDefaultWpc != 0)) ||
           (bpc != (CamConfig::kDefaultBpc != 0)) ||
           (gainCeiling != CamConfig::kDefaultGainCeiling);
-      auto initCameraWithWarmup = [&](uint8_t quality,
-                                      uint8_t size,
-                                      int8_t requestedSharpness,
-                                      uint8_t requestedDenoise,
-                                      bool requestedLenc,
-                                      bool requestedRawGma,
-                                      bool requestedAec2,
-                                      bool requestedWpc,
-                                      bool requestedBpc,
-                                      uint8_t requestedGainCeiling) {
+      bool nonDefaultOrientation =
+          (vflip != (CamConfig::kDefaultVFlip != 0)) ||
+          (hmirror != (CamConfig::kDefaultHMirror != 0));
+        auto initCameraWithWarmup = [&](uint8_t quality,
+                        uint8_t size,
+                        int8_t requestedSharpness,
+                        uint8_t requestedDenoise,
+                        bool requestedLenc,
+                        bool requestedRawGma,
+                        bool requestedAec2,
+                        bool requestedWpc,
+                        bool requestedBpc,
+                        uint8_t requestedGainCeiling,
+                        bool requestedVFlip,
+                        bool requestedHMirror) {
         g_camera.setJpegQuality(quality);
         g_camera.setFrameSize(size);
         g_camera.setSharpness(requestedSharpness);
@@ -453,6 +540,8 @@ void loop() {
         g_camera.setWpc(requestedWpc);
         g_camera.setBpc(requestedBpc);
         g_camera.setGainCeiling(requestedGainCeiling);
+        g_camera.setVFlip(requestedVFlip);
+        g_camera.setHMirror(requestedHMirror);
 
         if (!g_camera.init()) {
           return false;
@@ -483,36 +572,78 @@ void loop() {
         return true;
       };
 
-      if (initCameraWithWarmup(jpegQuality,
-                               frameSize,
-                               sharpness,
-                               denoise,
-                               lenc,
-                               rawGma,
-                               aec2,
-                               wpc,
-                               bpc,
-                               gainCeiling)) {
-        g_state = FwState::WS_CONNECTING;
-      } else if (jpegQuality != CamConfig::kDefaultJpegQuality ||
-                 frameSize != CamConfig::kDefaultFrameSize ||
-                 nonDefaultTuning) {
-        Serial.printf("[CAM] Falling back to safe defaults quality=%u frameSize=%u\n",
-                      CamConfig::kDefaultJpegQuality,
-                      CamConfig::kDefaultFrameSize);
-        g_configStore.setJpegQuality(CamConfig::kDefaultJpegQuality);
-        g_configStore.setFrameSize(CamConfig::kDefaultFrameSize);
-        g_configStore.setSharpness(CamConfig::kDefaultSharpness);
-        g_configStore.setDenoise(CamConfig::kDefaultDenoise);
-        g_configStore.setLenc(CamConfig::kDefaultLenc != 0);
-        g_configStore.setRawGma(CamConfig::kDefaultRawGma != 0);
-        g_configStore.setAec2(CamConfig::kDefaultAec2 != 0);
-        g_configStore.setWpc(CamConfig::kDefaultWpc != 0);
-        g_configStore.setBpc(CamConfig::kDefaultBpc != 0);
-        g_configStore.setGainCeiling(CamConfig::kDefaultGainCeiling);
+      auto applyWorkingProfile = [&](uint8_t quality, uint8_t size) {
+        g_configStore.setJpegQuality(quality);
+        g_configStore.setFrameSize(size);
+        g_configStore.setSharpness(sharpness);
+        g_configStore.setDenoise(denoise);
+        g_configStore.setLenc(lenc);
+        g_configStore.setRawGma(rawGma);
+        g_configStore.setAec2(aec2);
+        g_configStore.setWpc(wpc);
+        g_configStore.setBpc(bpc);
+        g_configStore.setGainCeiling(gainCeiling);
+        g_configStore.setVFlip(vflip);
+        g_configStore.setHMirror(hmirror);
+      };
 
-        if (initCameraWithWarmup(CamConfig::kDefaultJpegQuality,
-                                 CamConfig::kDefaultFrameSize,
+      const uint8_t fallbackFrameSizes[] = {
+        frameSize,
+        static_cast<uint8_t>(FRAMESIZE_XGA),
+        static_cast<uint8_t>(FRAMESIZE_SVGA),
+        static_cast<uint8_t>(FRAMESIZE_VGA),
+        static_cast<uint8_t>(FRAMESIZE_QVGA)
+      };
+
+      bool initOk = false;
+      uint8_t appliedFrameSize = frameSize;
+      uint8_t lastAttemptedSize = 0;
+      for (uint8_t candidateSize : fallbackFrameSizes) {
+        if (candidateSize > frameSize) continue;   // fallback = strictly smaller, never larger
+        if (candidateSize == 0) continue;
+        if (candidateSize == lastAttemptedSize) continue;  // skip duplicate (e.g. XGA requested → XGA appears twice)
+        lastAttemptedSize = candidateSize;
+        if (initCameraWithWarmup(jpegQuality,
+                                 candidateSize,
+                                 sharpness,
+                                 denoise,
+                                 lenc,
+                                 rawGma,
+                                 aec2,
+                                 wpc,
+                                 bpc,
+                                 gainCeiling,
+                                 vflip,
+                                 hmirror)) {
+          initOk = true;
+          appliedFrameSize = candidateSize;
+          break;
+        }
+        Serial.printf("[CAM] Profile failed quality=%u frameSize=%u, trying smaller profile...\n",
+                      jpegQuality,
+                      candidateSize);
+      }
+
+      if (initOk) {
+        if (appliedFrameSize != frameSize) {
+          Serial.printf("[CAM] Using fallback frameSize=%u instead of requested=%u\n",
+                        appliedFrameSize,
+                        frameSize);
+          applyWorkingProfile(jpegQuality, appliedFrameSize);
+        }
+        g_lastAppliedFrameSize = appliedFrameSize;
+        g_lastAppliedJpegQuality = jpegQuality;
+        g_state = FwState::WS_CONNECTING;
+      } else if (jpegQuality != CamConfig::kSafeJpegQuality ||
+                 frameSize != CamConfig::kSafeFrameSize ||
+                 nonDefaultTuning ||
+                 nonDefaultOrientation) {
+        Serial.printf("[CAM] Falling back to safe defaults quality=%u frameSize=%u\n",
+                      CamConfig::kSafeJpegQuality,
+                      CamConfig::kSafeFrameSize);
+
+        if (initCameraWithWarmup(CamConfig::kSafeJpegQuality,
+                                 CamConfig::kSafeFrameSize,
                                  CamConfig::kDefaultSharpness,
                                  CamConfig::kDefaultDenoise,
                                  CamConfig::kDefaultLenc != 0,
@@ -520,7 +651,24 @@ void loop() {
                                  CamConfig::kDefaultAec2 != 0,
                                  CamConfig::kDefaultWpc != 0,
                                  CamConfig::kDefaultBpc != 0,
-                                 CamConfig::kDefaultGainCeiling)) {
+                                 CamConfig::kDefaultGainCeiling,
+                                 CamConfig::kDefaultVFlip != 0,
+                                 CamConfig::kDefaultHMirror != 0)) {
+          // Update locals to match what was actually applied so applyWorkingProfile
+          // persists the correct (safe) values, not the failed user-requested ones.
+          sharpness    = CamConfig::kDefaultSharpness;
+          denoise      = CamConfig::kDefaultDenoise;
+          lenc         = (CamConfig::kDefaultLenc != 0);
+          rawGma       = (CamConfig::kDefaultRawGma != 0);
+          aec2         = (CamConfig::kDefaultAec2 != 0);
+          wpc          = (CamConfig::kDefaultWpc != 0);
+          bpc          = (CamConfig::kDefaultBpc != 0);
+          gainCeiling  = CamConfig::kDefaultGainCeiling;
+          vflip        = (CamConfig::kDefaultVFlip != 0);
+          hmirror      = (CamConfig::kDefaultHMirror != 0);
+          applyWorkingProfile(CamConfig::kSafeJpegQuality, CamConfig::kSafeFrameSize);
+          g_lastAppliedFrameSize = CamConfig::kSafeFrameSize;
+          g_lastAppliedJpegQuality = CamConfig::kSafeJpegQuality;
           g_state = FwState::WS_CONNECTING;
         } else {
           Serial.println("[CAM] Init failed even after fallback to safe defaults");
@@ -538,6 +686,15 @@ void loop() {
       if (!g_streamEnabled) {
         g_state = FwState::STREAM_PAUSED;
         break;
+      }
+
+      // Publish effective camera profile once reinit flow has completed.
+      if (!g_lastQualityCmdId.isEmpty()) {
+        publishCameraQualityEvent(g_lastQualityCmdId,
+                                  g_lastRequestedFrameSize,
+                                  g_lastAppliedFrameSize,
+                                  g_lastAppliedJpegQuality);
+        g_lastQualityCmdId = "";
       }
 
       String host;
@@ -602,6 +759,10 @@ void loop() {
       }
 
       g_camera.releaseFrame();
+      uint16_t frameDelayMs = g_configStore.getFrameDelay();
+      if (frameDelayMs > 0) {
+        delay(frameDelayMs);
+      }
       g_wsClient.loop();  // flush any server close/error received during capture
       break;
     }
