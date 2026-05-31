@@ -116,7 +116,7 @@ Firmware rejects any other value.
 }
 ```
 
-Napomena: trenutni `timer_camera` ACK path šalje samo `error.code` (bez `error.message`).
+Note: current `timer_camera` ACK path sends only `error.code` (without `error.message`).
 
 #### Possible Error Codes
 
@@ -141,7 +141,7 @@ Napomena: trenutni `timer_camera` ACK path šalje samo `error.code` (bez `error.
 - If streaming is active, firmware disconnects the current WebSocket session and reinitializes the camera immediately
 - If streaming is paused, firmware stores the new orientation and applies it on the next camera initialization
 - MQTT deduplication rules are the same as for `set-camera-quality`
-- `ts` i `result.appliedAt` u ACK payloadu su `millis()` vrijednosti (uptime), ne Unix epoch vrijeme
+- `ts` and `result.appliedAt` in ACK payload are `millis()` values (uptime), not Unix epoch time
 
 ---
 

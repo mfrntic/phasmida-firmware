@@ -10,61 +10,61 @@ source-of-truth:
 
 # Firmware v1.3 Camera Streaming Handoff
 
-## Sto firmware tim treba implementirati
+## What The Firmware Team Must Implement
 
-1. Generirati `slug` lokalno iz MAC adrese:
+1. Generate `slug` locally from MAC address:
 - `AA:BB:CC:DD:EE:FF` -> `aabbccddeeff`
-- tocno 12 znakova, lowercase hex
+- exactly 12 characters, lowercase hex
 
 2. Otvoriti outbound WebSocket:
 - `/ws/camera/{slug}?apiKey={deviceApiKey}`
 
-3. Nakon `open` odmah krenuti slati frameove:
+3. after `open` odmah krenuti slati frameove:
 - jedna WS binary poruka = jedan kompletan JPEG frame
-- backend provjerava minimalno SOI (`FF D8`)
+- backend verificationva minimalno SOI (`FF D8`)
 
 4. Heartbeat i reconnect su firmware odgovornost:
 - ping svakih 30s
-- ako nema pong/heartbeat potvrde 60s, zatvoriti WS i reconnectati
+- if there is no pong/heartbeat confirmation for 60s, close WS and reconnect
 - exponential backoff: 1s, 2s, 4s, 8s ... cap 60s
 
-## Ulazni podaci koje firmware mora imati
+## Required Input Data For Firmware
 
 - `deviceMac`
-- `deviceApiKey` (iz `POST /admin/devices`)
-- `pairingCode` (iz `POST /admin/devices`, koristi se za user claim)
+- `deviceApiKey` (from `POST /admin/devices`)
+- `pairingCode` (from `POST /admin/devices`, used for user claim)
 - Wi-Fi SSID/password
 - backend base URL
 
-## Preduvjet prije ingest-a
+## Precondition Before Ingest
 
-Uredaj mora biti claiman od korisnika kroz:
+Device must be claimed by a user through:
 - `POST /devices/claim`
 
-Ako nije claiman, WS ce biti odbijen close codeom `4403`.
+If it is not claimed, WS will be rejected with close code `4403`.
 
-## Tretman WS close kodova
+## WS Close Code Handling
 
-- `4401`: credential/config error (ne tretirati kao obicni transient network fail)
-- `4403`: device nije claiman (provisioning/claim problem)
-- `4000`: backend je zatvorio staru konekciju jer je dosla nova s istim kredencijalima; ovo nije greska — reconnectati normalno
+- `4401`: credential/config error (do not treat as a normal transient network failure)
+- `4403`: device is not claimed (provisioning/claim problem)
+- `4000`: backend closed the old connection because a new one arrived with the same credentials; this is not an error, reconnect normally
 
-## Sto nije firmware scope
+## Out Of Firmware Scope
 
 - Portal UI
-- stream token lifecycle za browser
-- admin linking kamere na senzor
+- stream token lifecycle for browser
+- admin linking of camera to sensor
 
-## Brza validacija (acceptance checklist)
+## Quick Validation (Acceptance Checklist)
 
-- uredaj se spoji na `/ws/camera/{slug}?apiKey={key}`
-- los kljuc daje `4401`
-- neclaiman uredaj daje `4403`
-- validan WS ingest omoguci backend stream-token/stream/snapshot put
-- reconnect radi automatski bez rucnog reseta
+- device connects to `/ws/camera/{slug}?apiKey={key}`
+- bad key returns `4401`
+- unclaimed device returns `4403`
+- valid WS ingest enables backend stream-token/stream/snapshot path
+- reconnect works automatically without manual reset
 
-## Predaja timu
+## Team Handoff
 
-Firmware timu poslati:
-1. Ovaj handoff kao operativni dokument.
-2. Puni spec kao normativni izvor istine za rubne slucajeve i detalje.
+Send to firmware team:
+1. This handoff as the operational document.
+2. The full spec as the normative source of truth for edge cases and details.

@@ -1,121 +1,104 @@
 # Phasmida MQTT Protocol v1
 
-Ugovor između IoT firmware-a i Phasmida backend-a.
+Contract between device firmware and Phasmida backend.
 
-Verzija: 1.0
-Status: As implemented (main branch)
-Vlasnici: Backend tim + Firmware tim
-
----
-
-## 1. Pregled
-
-Uređaji se s backendom dogovaraju preko MQTT brokera.
-Backend pretplaćuje sve uplink topice i objavljuje downlink komande.
-
-**Transport (trenutni firmware):** MQTT 3.1.1 preko plain TCP.
-**Endpoint (default):** `api.phasmida.eu:1883`
-**TLS:** može se uključiti korištenjem porta `8883`, ali trenutna implementacija koristi `setInsecure()` (bez validacije certifikata).
-**Format:** UTF-8 JSON.
-**Vrijeme:**
-- `core_s3`: Unix epoch ms (`TimeSync`) za `timestampMs` i `ts`
-- `timer_camera_f`: `millis()` za `ts` u `cmd/ack` i `events`
+Version: 1.0  
+Status: As implemented (main branch)  
+Owners: Backend + Firmware
 
 ---
 
-## 2. Identitet uređaja
+## 1. Overview
 
-Svaki uređaj ima MAC adresu kao primarni identitet.
+Devices communicate with backend through MQTT.
+Backend subscribes to uplink topics and publishes downlink commands.
 
-Postoje dvije forme MAC adrese:
+Current firmware behavior:
 
-| Forma | Primjer | Gdje se koristi |
-|-------|---------|------------------|
-| **Display** | `AA:BB:CC:DD:EE:FF` | JSON payload (`macaddress` polje) |
-| **Slug** (lowercase hex bez separatora) | `aabbccddeeff` | MQTT topic, broker username |
+- Transport: MQTT 3.1.1 over plain TCP
+- Default endpoint: `api.phasmida.eu:1883`
+- Optional TLS path: port `8883` exists, but current firmware uses `setInsecure()` (no server certificate validation)
+- Payload format: UTF-8 JSON
 
-Backend interno normalizira oba oblika. Firmware **mora** koristiti slug u topicima i username-u, a display formu u JSON polju `macaddress`.
+Time semantics:
+
+- `core_s3`: Unix epoch ms (`timestampMs`, `ts`) from `TimeSync`
+- `timer_camera_f`: `millis()` for `cmd/ack.ts` and `events.ts`
 
 ---
 
-## 3. Autentikacija na brokeru
+## 2. Device Identity
 
-Svaki uređaj ima **vlastite** MQTT credentials. Nema shared accounta.
+Each device uses MAC address as primary identity.
 
-### Uređaj (firmware)
+Two MAC forms:
 
-| Polje | Vrijednost |
-|-------|------------|
-| `username` | MAC slug uređaja, npr. `aabbccddeeff` |
-| `password` | `api_key` koji je admin izdao kroz `POST /admin/devices` |
-| `clientId` | `phasmida-{slug}`, npr. `phasmida-aabbccddeeff` |
+| Form | Example | Usage |
+|------|---------|-------|
+| Display | `AA:BB:CC:DD:EE:FF` | JSON payload field `macaddress` |
+| Slug (lowercase hex, no separators) | `aabbccddeeff` | MQTT topic path, broker username |
 
-### Backend (Phasmida API)
+Firmware uses slug in MQTT topics/username and display form in payloads.
 
-| Polje | Vrijednost |
-|-------|------------|
+---
+
+## 3. Broker Authentication
+
+Each device has its own MQTT credentials.
+
+### Device
+
+| Field | Value |
+|------|-------|
+| `username` | device slug (for example `aabbccddeeff`) |
+| `password` | per-device API key |
+| `clientId` | `phasmida-{slug}` |
+
+### Backend
+
+| Field | Value |
+|------|-------|
 | `username` | `phasmida` |
-| `password` | iz `MQTT_BACKEND_PASSWORD` env varijable |
-| `clientId` | `phasmida-backend-{instanceId}` (instanceId = random per process) |
+| `password` | `MQTT_BACKEND_PASSWORD` |
+| `clientId` | `phasmida-backend-{instanceId}` |
 
-Backend ima poseban ACL koji mu dopušta `subscribe` i `publish` na sve `phasmida/+/...` topice.
+Rules:
 
-### Pravila
-
-- Jedan `clientId` po uređaju. Nova konekcija s istim ID-jem prekida prethodnu (Mosquitto default).
-- Ako broker odbije auth (`CONNACK` rc 4 ili 5), firmware **ne smije** ponovno pokušavati u tight loopu — koristi backoff (vidi §10).
-- Revoke na backendu (`PATCH /admin/devices/:id/revoke`) odmah onemogućuje MQTT pristup — broker poziva backend pri svakom reconnectu uređaja (vidi §16).
+- Single `clientId` session behavior follows broker defaults.
+- On auth failures, firmware uses reconnect backoff.
 
 ---
 
-## 4. Topic struktura
+## 4. Topic Structure
 
-Sve teme imaju prefiks `phasmida/{slug}/`.
+All topics use prefix `phasmida/{slug}/`.
 
-### Uplink (uređaj → backend)
+### Uplink (device -> backend)
 
-| Topic | Svrha | QoS | Retained |
-|-------|-------|-----|----------|
-| `phasmida/{slug}/telemetry` | Mjerenja senzora | 1 | ne |
-| `phasmida/{slug}/status` | Online/offline lifecycle | 1 | **da** |
-| `phasmida/{slug}/events` | Diskretni događaji, alarmi, greške | 1 | ne |
-| `phasmida/{slug}/cmd/ack` | Potvrda izvršenja komande | 1 | ne |
+| Topic | Purpose | QoS | Retained |
+|------|---------|-----|----------|
+| `phasmida/{slug}/telemetry` | Sensor readings | 1 | no |
+| `phasmida/{slug}/status` | Online/offline lifecycle | 1 | yes |
+| `phasmida/{slug}/events` | Discrete events/errors | 1 | no |
+| `phasmida/{slug}/cmd/ack` | Command execution ACK | 1 | no |
 
-### Downlink (backend → uređaj)
+### Downlink (backend -> device)
 
-| Topic | Svrha | QoS | Retained |
-|-------|-------|-----|----------|
-| `phasmida/{slug}/cmd` | Komande za uređaj | 1 | **ne** |
+| Topic | Purpose | QoS | Retained |
+|------|---------|-----|----------|
+| `phasmida/{slug}/cmd` | Commands | 1 | no |
 
-Firmware se **mora** pretplatiti na `phasmida/{slug}/cmd` odmah po uspješnoj konekciji.
-
-### ACL pravila
-
-ACL je enforcedan dinamički kroz HTTP backend (vidi §16). Efektivna pravila:
-
-Uređaj s username-om `aabbccddeeff` smije:
-- `publish` na `phasmida/aabbccddeeff/telemetry`
-- `publish` na `phasmida/aabbccddeeff/status`
-- `publish` na `phasmida/aabbccddeeff/events`
-- `publish` na `phasmida/aabbccddeeff/cmd/ack`
-- `subscribe` na `phasmida/aabbccddeeff/cmd`
-
-Svaki pokušaj `publish` ili `subscribe` izvan vlastite `phasmida/{vlastiti-slug}/` grane mora biti odbijen.
-
-Backend (`phasmida`) ima zasebno ACL pravilo:
-- `subscribe` na `phasmida/+/telemetry`
-- `subscribe` na `phasmida/+/status`
-- `publish` na `phasmida/+/status`
-- `subscribe` na `phasmida/+/events`
-- `subscribe` na `phasmida/+/cmd/ack`
-- `publish` na `phasmida/+/cmd`
+Devices should subscribe to `phasmida/{slug}/cmd` after MQTT connect.
 
 ---
 
-## 5. Telemetry payload
+## 5. Telemetry Payload
 
-Topic: `phasmida/{slug}/telemetry`
-QoS: 1, Retained: ne.
+Topic: `phasmida/{slug}/telemetry`  
+QoS: 1  
+Retained: no
+
+Example:
 
 ```json
 {
@@ -126,53 +109,27 @@ QoS: 1, Retained: ne.
   "timestampMs": 1735000000000,
   "measurements": [
     { "metric": "temperature", "value": 23.4, "unit": "C" },
-    { "metric": "humidity",      "value": 51.2, "unit": "percent" },
-    { "metric": "pressure",      "value": 101325.0, "unit": "Pa" },
-    { "metric": "gasResistance", "value": 18452.0, "unit": "Ohm" },
-    { "metric": "iaq",           "value": 35.0, "unit": "index" },
-    { "metric": "co2eq",         "value": 612.0, "unit": "ppm" },
-    { "metric": "voc",           "value": 0.73, "unit": "ppm" }
+    { "metric": "humidity", "value": 51.2, "unit": "percent" }
   ]
 }
 ```
 
-Polja:
-- `apiVersion` (int, obavezno) — uvijek `1` u ovoj verziji.
-- `msgId` (string, obavezno) — ULID ili UUIDv4 generiran na uređaju. Koristi se za **dedupliciranje** (vidi §11).
-- `macaddress` (string, obavezno) — display forma s dvotočkama.
-- `sensorType` (string, obavezno) — identifikator senzora ili profila ploče.
-- `timestampMs` (int, obavezno) — vrijeme očitanja na uređaju.
-- `measurements` (array, obavezno, min 1) — lista očitanja.
-  - `metric` (string) — naziv mjerne veličine.
-  - `value` (number) — vrijednost.
-  - `unit` (string) — mjerna jedinica.
+Notes:
 
-Pravila:
-- Duplicirani `metric` u istom payloadu = backend odbija poruku.
-- Backend pohranjuje u `telemetry` time-series kolekciju (isti shape kao trenutni HTTP `POST /telemetry`).
-- Za `env-pro` profile preporučeni skup metrika je: `temperature`, `humidity`, `pressure`, `gasResistance`, `iaq`, `co2eq`, `voc`.
-- Za `env-iii` profile preporučeni skup metrika je: `temperature`, `humidity`, `pressure`.
-
-### Multi-probe uređaji
-
-Uređaj s više istovremeno spojenih sondi **mora** publishati zasebnu telemetry poruku za svaku sondu, a ne objedinjavati metrike svih sondi u jedan payload. Svaka poruka ima:
-- vlastiti `msgId` (za per-poruka dedupliciranje),
-- isti `timestampMs` (koji odražava trenutak ciklusa),
-- isti `macaddress`,
-- `sensorType` specifičan za tu sondu.
-
-Time su metrike unutar svake poruke uvijek jedinstvene, a backend može pohraniti i obraditi podatke svake sonde neovisno. Backend smije primiti više telemetry poruka od istog uređaja u kratkom vremenskom prozoru bez odbacivanja, pod uvjetom da svaka ima jedinstven `msgId`.
+- `apiVersion` is `1`
+- `msgId` is firmware-generated unique ID
+- one payload should not contain duplicated `metric` names
+- multi-probe devices publish separate telemetry payloads per probe
 
 ---
 
-## 6. Status payload (LWT)
+## 6. Status Payload (LWT)
 
-Topic: `phasmida/{slug}/status`
-QoS: 1, **Retained: da**.
+Topic: `phasmida/{slug}/status`  
+QoS: 1  
+Retained: yes
 
-Status je izvor istine za "uređaj je online". Frontend i backend ne pingaju uređaj — slušaju status topic.
-
-### Online (publishaj odmah po uspješnom CONNACK)
+Online example:
 
 ```json
 {
@@ -183,9 +140,7 @@ Status je izvor istine za "uređaj je online". Frontend i backend ne pingaju ure
 }
 ```
 
-### Last Will and Testament (registriraj pri konekciji)
-
-Firmware **mora** registrirati Will pri MQTT CONNECT s ovim payloadom:
+LWT payload (set at MQTT connect):
 
 ```json
 {
@@ -195,42 +150,20 @@ Firmware **mora** registrirati Will pri MQTT CONNECT s ovim payloadom:
 }
 ```
 
-Will se postavlja na isti topic, QoS 1, retained=true. Broker ga objavi automatski kad uređaj nepredviđeno padne.
+Target-specific behavior:
 
-### Graceful disconnect
-
-Prije urednog `DISCONNECT`-a, firmware publisha:
-
-```json
-{
-  "state": "offline",
-  "ts": 1735000000000,
-  "reason": "shutdown"
-}
-```
-
-Polja:
-- `state` — `online` ili `offline`.
-- `ts` — vrijeme događaja (Will payload smije imati `0` jer ga uređaj ne stigne ažurirati).
-- `reason` (samo za offline) — `shutdown`, `unexpected`, ili slobodan tekst.
-- `fwVersion`, `ip` — opcionalno, dijagnostika.
-
-### Heartbeat
-
-Ako se status nije mijenjao, firmware republisha online status svakih **5 minuta** (re-osvježava retained poruku i potvrđuje liveness).
-
-Napomena za targete:
-- `core_s3`: implementira online publish, heartbeat i graceful offline publish.
-- `timer_camera_f`: trenutno postavlja LWT (`offline/unexpected`), ali ne publisha periodični online status.
+- `core_s3` publishes online status and 5-minute heartbeats
+- `timer_camera_f` currently sets LWT but does not publish periodic online heartbeats
 
 ---
 
-## 7. Events payload
+## 7. Events Payload
 
-Topic: `phasmida/{slug}/events`
-QoS: 1, Retained: ne.
+Topic: `phasmida/{slug}/events`  
+QoS: 1  
+Retained: no
 
-Za diskretne događaje koji nisu mjerenja (alarmi, greške, ručno triggerirane akcije).
+Example:
 
 ```json
 {
@@ -245,164 +178,66 @@ Za diskretne događaje koji nisu mjerenja (alarmi, greške, ručno triggerirane 
 }
 ```
 
-Polja:
-- `severity` — `info`, `warning`, `error`, `critical`.
-- `type` — slobodan string (npr. `sensor-error`, `power-loss`, `manual-reset`).
-- `details` — opcionalni objekt s kontekstom.
-
 ---
 
-## 8. Komande (downlink)
+## 8. Commands (Downlink)
 
-Topic: `phasmida/{slug}/cmd`
-QoS: 1, **Retained: ne** (komande za offline uređaj backend zadržava u svojem queue-u, ne na brokeru). Trenutni flush trigger preko `{ "state": "online" }` status poruke je relevantan za `core_s3` tok.
+Topic: `phasmida/{slug}/cmd`  
+QoS: 1  
+Retained: no
+
+Command envelope example:
 
 ```json
 {
   "cmdId": "01HXYZK6H9B5O2Q3R6S8T0U1V4",
   "type": "reboot",
-  "params": { "delayMs": 0 },
+  "params": {},
   "issuedAt": 1735000000000,
   "ttlMs": 30000
 }
 ```
 
-Polja:
-- `cmdId` (string, obavezno) — ULID ili UUIDv4 generiran na backendu. Firmware ga vraća u ack.
-- `type` (string, obavezno) — vidi listu ispod.
-- `params` (object, obavezno) — parametri specifični za komandu (može biti prazan `{}`).
-- `issuedAt` (int) i `ttlMs` (int):
-  - `core_s3`: obavezno, `expired` se provodi u firmwareu.
-  - `timer_camera_f`: trenutno se ne validira (komanda se obrađuje bez TTL check-a).
+Envelope notes:
 
-### Komande u v1 (po targetu)
+- `cmdId` and `type` are required
+- `core_s3`: `issuedAt` and `ttlMs` are required and expiration is enforced
+- `timer_camera_f`: `issuedAt`/`ttlMs` are currently not enforced
 
-| Komanda | `core_s3` | `timer_camera_f` |
+### Implemented commands by target
+
+| Command | `core_s3` | `timer_camera_f` |
 |---------|-----------|------------------|
-| `request-telemetry` | da | ne |
-| `reboot` | da | ne |
-| `set-config` | da | ne |
-| `set-led` | da | ne |
-| `set-light` | da | ne |
-| `start-rgb-verification` | da | ne |
-| `factory-reset` | da | ne |
-| `stream-stop` | ne | da |
-| `stream-start` | ne | da |
-| `set-camera-quality` | ne | da |
-| `set-camera-orientation` | ne | da |
+| `request-telemetry` | yes | no |
+| `reboot` | yes | no |
+| `set-config` | yes | no |
+| `set-led` | yes | no |
+| `set-light` | yes | no |
+| `start-rgb-verification` | yes | no |
+| `factory-reset` | yes | no |
+| `stream-stop` | no | yes |
+| `stream-start` | no | yes |
+| `set-camera-quality` | no | yes |
+| `set-camera-orientation` | no | yes |
 
-Sve ostalo: `status: "rejected"`, `error.code: "unsupported_command"`.
+Unknown command handling:
 
-#### `reboot`
-```json
-{ "type": "reboot", "params": { "delayMs": 0 } }
-```
-- `delayMs` — koliko čekati prije reboota (0 = odmah).
-- Firmware šalje ack `ok` **prije** reboota.
+- status: `rejected`
+- error code: `unsupported_command`
 
-#### `set-config`
-```json
-{
-  "type": "set-config",
-  "params": {
-    "telemetryIntervalMs": 60000,
-    "sensorType": "dht22"
-  }
-}
-```
-- Sva polja unutar `params` su opcionalna. Firmware mijenja samo poslana.
-- Ack vraća stvarno primijenjenu konfiguraciju u `result`.
+Reserved (not implemented):
 
-#### `factory-reset`
-```json
-{ "type": "factory-reset", "params": { "confirm": true } }
-```
-- `confirm` mora biti `true`, inače firmware šalje `status: "rejected"`.
-- Briše sve lokalno spremljene podatke osim API ključa.
-
-#### `request-telemetry`
-```json
-{ "type": "request-telemetry", "params": {} }
-```
-- Firmware odmah okida jedno telemetry očitanje izvan reda.
-- Ack `ok` šalje **nakon** publishanja telemetrije.
-
-#### `set-led`
-```json
-{
-  "type": "set-led",
-  "params": { "mode": "blink", "color": "green", "durationMs": 5000 }
-}
-```
-- Vizualni feedback za fizičku identifikaciju uređaja u prostoru.
-- `mode`: `off`, `solid`, `blink`.
-- `color`: slobodan string (firmware mapira što podržava).
-- `durationMs`: 0 = trajno dok ne stigne nova `set-led` komanda.
-
-#### `set-light`
-```json
-{
-  "type": "set-light",
-  "params": { "targetColor": "#FF6200", "brightness": 200 }
-}
-```
-- Kontrola SK6812 RGB Unit trake (GPIO17), neovisno od `set-led`.
-- `targetColor`: obavezno, strogi `#RRGGBB` format.
-- `brightness`: obavezno, integer 0-255.
-- Ack `ok` vraća `result.activeColor`, `result.brightness`, `result.appliedAt`.
-- Ako je aktivan `start-rgb-verification` session: `status: "rejected"`, `error.code: "verification_in_progress"`.
-- Detaljna specifikacija: `docs/set-light-command.md`.
-
-#### `start-rgb-verification`
-- Pokreće soft-hotplug verification session za RGB modul.
-- Detalji session flow-a, validacija i event payloadi: `docs/spec-firmware-v1-2-rgb-soft-hotplug.md`.
-
-#### `stream-stop`
-```json
-{ "type": "stream-stop", "params": {} }
-```
-- Zaustavlja camera streaming i drži ga zaustavljenim dok ne stigne `stream-start`.
-- Komanda je idempotentna: ako je stream već zaustavljen, firmware vraća `status: "ok"`.
-- Preporučeni `result` u ack-u:
-  - `streamEnabled`: `false`
-  - `appliedAt`: timestamp izvršenja na uređaju
-
-#### `stream-start`
-```json
-{ "type": "stream-start", "params": {} }
-```
-- Pokreće camera streaming ako je prethodno zaustavljen.
-- Komanda je idempotentna: ako je stream već aktivan, firmware vraća `status: "ok"`.
-- Firmware nakon prihvata komande ulazi u postojeći init tok (`CAMERA_INIT` -> `WS_CONNECTING` -> `STREAMING`).
-- Preporučeni `result` u ack-u:
-  - `streamEnabled`: `true`
-  - `appliedAt`: timestamp izvršenja na uređaju
-
-#### `set-camera-quality`
-```json
-{
-  "type": "set-camera-quality",
-  "params": { "jpegQuality": 12, "frameSize": 13 }
-}
-```
-- Mijenja traženi JPEG profil i pokreće camera reinit tok.
-- Ack `ok` potvrđuje da je zahtjev prihvaćen i spremljen (`result.status = accepted_for_reinit`).
-- Konačno effective stanje dolazi kao event na `phasmida/{slug}/events`:
-  - `type: camera-quality-applied` ako je `requested == applied`
-  - `type: camera-quality-fallback` ako je firmware morao spustiti frame size
-- Frontend i backend za prikaz stvarnog stanja koriste `details.applied` iz eventa kao source of truth.
-
-#### Reserved (nije implementirano u v1)
-- `firmware-update` — rezervirano, doći će s OTA infrastrukturom.
+- `firmware-update`
 
 ---
 
 ## 9. Command ACK
 
-Topic: `phasmida/{slug}/cmd/ack`
-QoS: 1, Retained: ne.
+Topic: `phasmida/{slug}/cmd/ack`  
+QoS: 1  
+Retained: no
 
-Firmware šalje ack za obrađene komande; ponašanje kod duplicate poruka je target-specifično (vidi §11).
+Example:
 
 ```json
 {
@@ -417,121 +252,84 @@ Firmware šalje ack za obrađene komande; ponašanje kod duplicate poruka je tar
 }
 ```
 
-Polja:
-- `cmdId` — kopirano iz komande.
-- `status` — `ok`, `error`, `rejected`, `expired`.
-  - `ok` — komanda izvršena.
-  - `error` — pokušano izvršiti, neuspjeh (vidi `error` polje).
-  - `rejected` — komanda odbijena (npr. nevalidni parametri, `confirm: false`).
-  - `expired` — primljena nakon isteka `ttlMs`.
-- `ts` — vrijeme izvršenja (`core_s3`: Unix epoch ms, `timer_camera_f`: `millis()`).
-- `result` (opcionalno) — povratni podaci specifični za komandu.
-- `error` (opcionalno) — `{ "code": "...", "message": "..." }` kod statusa `error` ili `rejected`.
+Status values:
 
-Napomena za asinkrone komande:
-- Kod komandi koje trebaju duži tok primjene (`set-camera-quality`), `status: ok` u ack-u znači accepted + queued for apply.
-- Effective rezultat je zaseban event na topicu `phasmida/{slug}/events`.
+- `ok`
+- `error`
+- `rejected`
+- `expired` (`core_s3` command TTL path)
 
-### Pravila ack/retry
+Time field `ts`:
 
-- Backend **ne re-issue-a** komandu automatski ako ack ne stigne. Operater mora eksplicitno tražiti ponovno slanje.
-- Backend **dedup-ira** ack-ove po `cmdId`. Ako stigne 2x (zbog QoS 1 retransmisije), drugi se ignorira.
-- Backend čeka ack maksimalno `ttlMs + 5s`. Nakon toga komanda ide u stanje `timeout` u backend logu.
+- `core_s3`: Unix epoch ms
+- `timer_camera_f`: `millis()`
 
 ---
 
-## 10. Konekcija i reconnect
+## 10. Connect and Reconnect
 
-### CONNECT parametri
+CONNECT parameters (implemented):
 
-| Parametar | Vrijednost |
-|-----------|------------|
-| MQTT verzija | 3.1.1 ili 5.0 |
-| `clientId` | `phasmida-{slug}` |
-| `username` | `{slug}` |
-| `password` | `api_key` |
-| `cleanSession` / `cleanStart` | `true` (uređaj ne treba queue) |
-| `keepAlive` | 60 sekundi |
-| `will` | postavljen prema §6 |
+- `clientId = phasmida-{slug}`
+- `username = {slug}`
+- `password = api_key`
+- `keepAlive = 60`
+- will payload on status topic
 
-### Slijed po uspješnom CONNACK
+Reconnect strategy in firmware:
 
-1. Subscribe na `phasmida/{slug}/cmd` s QoS 1.
-2. Publish online status na `phasmida/{slug}/status` (retained, QoS 1).
-3. Pokreni normalnu telemetry petlju.
-
-### Reconnect strategija
-
-Eksponencijalni backoff s jitterom:
-
-```
-pokušaji: 1s → 2s → 4s → 8s → 16s → 32s → 60s → 60s → ...
-jitter: ±20% na svaki interval
-max: 60s
-```
-
-Pravila:
-- Pri auth neuspjehu (CONNACK rc 4 ili 5), backoff počinje od **30s** (ne 1s) da se izbjegne hammeranje brokera kad je ključ revokiran.
-- Pri network grešci, kreni od 1s.
-
-### Backend reconnect
-
-Backend (`phasmida`) koristi fiksni reconnect interval od **5s** bez exponential backoff-a — backend je stabilan server proces, ne baterijski uređaj, i brz reconnect je poželjan.
+- exponential backoff with jitter
+- auth failures use delayed reconnect start
 
 ---
 
-## 11. Idempotency i deduplikacija
+## 11. Idempotency and Deduplication
 
-QoS 1 jamči at-least-once, što znači da poruka može stići dvaput. Pravila:
+QoS 1 is at-least-once.
 
-| Smjer | Tko dedup-ira | Po čemu |
-|-------|---------------|---------|
-| Telemetry | Backend | `(device_id, msgId)` u zadnjih 5 minuta |
-| Events | Backend | `(device_id, msgId)` u zadnjih 5 minuta |
-| Command | Firmware | `cmdId` dedup je implementiran na oba targeta; duplicate handling nije isti |
-| Ack | Backend | `cmdId` — drugi ack se ignorira |
+| Direction | Dedup owner | Key |
+|-----------|-------------|-----|
+| Telemetry | Backend | `(device_id, msgId)` |
+| Events | Backend | `(device_id, msgId)` |
+| Commands | Firmware | `cmdId` |
+| ACK | Backend | `cmdId` |
 
-Napomena:
-- `core_s3`: duplicate command trenutno re-acka sa `status: "ok"`.
-- `timer_camera_f`: duplicate command trenutno ignorira bez ponovnog ACK-a.
+Current target-specific duplicate handling:
 
-Firmware generira `msgId` za telemetry/events payloadove; backend generira `cmdId`.
-
----
-
-## 12. Ograničenja
-
-| Ograničenje | Vrijednost | Posljedica prekoračenja |
-|-------------|------------|--------------------------|
-| Max payload telemetry | 8 KB | Backend odbija, šalje event nazad |
-| Max payload status/events/ack | 2 KB | Isto |
-| Min interval između telemetry poruka | 5 s | Backend odbija poruku i logira prekršaj; pri ponovljenim prekršajima backend može revokirati uređaj |
-| Default telemetry interval | 60 s | Konfigurabilno preko `set-config` |
-| Status heartbeat | svakih 5 min | Backend može uređaj proglasiti stale |
-| Max komandi u letu (bez ack-a) | 5 po uređaju | Backend ne šalje nove dok ne stignu ack-ovi |
+- `core_s3`: duplicate command is re-ACKed with `status: ok`
+- `timer_camera_f`: duplicate command is ignored without ACK resend
 
 ---
 
-## 13. Verzioniranje
+## 12. Limits
 
-- Trenutna verzija: **v1**, fiksirana u `apiVersion` polju u payload-u i u nazivu ovog dokumenta.
-- **Non-breaking** izmjene (dodavanje opcionalnih polja) ostaju u v1. Firmware mora ignorirati nepoznata polja.
-- **Breaking** izmjene zahtijevaju novi topic prefiks (npr. `phasmida/v2/{slug}/`) uz istovremeno održavanje trenutnog prefiksa minimalno 6 mjeseci.
-
----
-
-## 14. Sigurnost — trenutni status
-
-- Firmware default transport je plain TCP na portu `1883`.
-- TLS put preko `8883` postoji, ali trenutna implementacija ne validira certifikat (`setInsecure()`).
-- Auth na razini uređaja je per-device username/password (vidi §3).
-- mTLS i strict cert validation nisu implementirani u trenutnom firmwareu.
+| Limit | Value |
+|------|-------|
+| Max telemetry payload | 8 KB |
+| Max status/events/ack payload | 2 KB |
+| Min telemetry interval | 5 s |
+| Default telemetry interval | 60 s |
 
 ---
 
-## 15. Primjeri
+## 13. Versioning
 
-### Konekcija (pseudo-kod, trenutno stanje)
+- Current protocol: v1
+- Non-breaking changes can stay in v1
+- Breaking changes require a versioned migration path
+
+---
+
+## 14. Security (Current Firmware State)
+
+- Default firmware transport is plain TCP on port `1883`
+- TLS path on `8883` exists, but current implementation does not validate certificates
+- Device auth is username/password per device
+- mTLS is not implemented
+
+---
+
+## 15. Example Connection (Current Runtime)
 
 ```text
 client.connect({
@@ -552,118 +350,23 @@ client.connect({
 })
 ```
 
-### Publish telemetry
+---
 
-```text
-topic:   phasmida/aabbccddeeff/telemetry
-qos:     1
-retain:  false
-payload: { ... vidi §5 ... }
-```
+## 16. Broker Auth Model
 
-### Subscribe na komande
+Broker uses HTTP-backed auth/ACL checks (mosquitto-go-auth + backend API).
 
-```text
-topic:   phasmida/aabbccddeeff/cmd
-qos:     1
-```
+At a high level:
+
+- CONNECT checks device credentials
+- publish/subscribe checks ACL per username/topic
+- backend user `phasmida` has wildcard operational permissions
 
 ---
 
-## 16. Mosquitto auth — operativni model
+## 17. Open Items
 
-Mosquitto koristi **mosquitto-go-auth** plugin s HTTP backendom. Za svaki CONNECT i svaki publish/subscribe broker poziva Phasmida API. Nema lokalnih `password_file` ni `acl_file` po uređaju — provisioning uređaja je isključivo kroz backend API.
-
-### mosquitto.conf
-
-Koristimo Docker image `iegomez/mosquitto-go-auth:latest` (Debian/glibc) — plugin `.so` je već ugrađen na `/mosquitto/go-auth.so`. Plugin koristi prefix `auth_opt_` (ne `plugin_opt_`). Mosquitto i API se vrte kao zasebni Coolify resursi na istoj Docker mreži (`coolify`), pa plugin doseže API po service hostname-u.
-
-```conf
-persistence true
-persistence_location /mosquitto/data/
-log_dest stdout
-
-listener 1883 0.0.0.0
-allow_anonymous false
-
-# TLS listener — jedini izložen prema vani (terminira ga Coolify proxy / vanjski TLS)
-listener 8883 0.0.0.0
-
-# mosquitto-go-auth plugin
-auth_plugin /mosquitto/go-auth.so
-auth_opt_backends http
-auth_opt_http_host <api-service-hostname>     # npr. ckwwswo0og4gwg0gwswcc0go-223204760509
-auth_opt_http_port 3000                        # API_PORT (Fastify server)
-auth_opt_http_getuser_uri /internal/mqtt-auth/user
-auth_opt_http_aclcheck_uri /internal/mqtt-auth/acl
-auth_opt_http_response_mode status
-auth_opt_http_params_mode json
-# Cache isključen — revoke stupa na snagu odmah pri sljedećem CONNECT-u
-auth_opt_cache false
-auth_opt_log_level info
-```
-
-Napomena: port 1883 ne otvarati prema javnoj mreži. Ako je potreban lokalno za debug, vezati ga na `127.0.0.1`. Operativni vodič za Coolify deployment: `api/docs/MOSQUITTO-SETUP-COOLIFY.md`.
-
-### Backend API endpointi (interni)
-
-Endpointi nisu izloženi prema vani — samo za Mosquitto plugin na localhostu.
-
-#### `POST /internal/mqtt-auth/user`
-
-Mosquitto poziva pri svakom CONNECT:
-
-```json
-{ "username": "aabbccddeeff", "password": "<api_key>", "clientid": "phasmida-aabbccddeeff" }
-```
-
-Backend provjerava `devices` kolekciju: postoji li aktivan uređaj s tim MAC slugom i api_keyem.
-
-- `200 OK` — autentikacija uspješna
-- `403 Forbidden` — nepoznat uređaj, revokiran ključ ili pogrešan ključ
-
-Backend MQTT klijent autenticira se posebnom provjerom username-a — endpoint provjerava je li `username == "phasmida"` i validira password protiv `MQTT_BACKEND_PASSWORD` env varijable (timing-safe usporedba).
-
-> **Caching:** mosquitto-go-auth podržava cache auth odgovora radi performansi. Ako je cache omogućen, revoke neće biti trenutan — revokirani uređaj može ostati autentificiran do isteka cache TTL-a. Preporuka: držati `auth_opt_cache false` (kao u trenutnom configu), ili postaviti TTL ≤ 60s.
-
-#### `POST /internal/mqtt-auth/acl`
-
-Mosquitto poziva pri svakom publish/subscribe:
-
-```json
-{ "username": "aabbccddeeff", "clientid": "phasmida-aabbccddeeff", "topic": "phasmida/aabbccddeeff/telemetry", "acc": 2 }
-```
-
-`acc` vrijednosti: `1` = subscribe, `2` = publish.
-
-Backend ne mora složenu logiku — dovoljna je provjera `pattern`-om:
-- uređaj (`username` != `phasmida`) smije publish/subscribe **samo** na `phasmida/{username}/#`
-- backend (`username == phasmida`) smije publish/subscribe na sve `phasmida/+/#`
-
-- `200 OK` — pristup dozvoljen
-- `403 Forbidden` — pristup odbijen
-
-### Provisioning postupak
-
-1. Admin radi `POST /admin/devices` → API vraća `api_key`.
-2. **Gotovo.** Mosquitto automatski autenticira uređaj pri prvom spajanju.
-
-### Revoke postupak
-
-1. Admin radi `PATCH /admin/devices/:id/revoke` → backend postavlja `status: revoked` u `devices` kolekciji.
-2. **Gotovo.** Sljedeći CONNECT uređaja dobiva `CONNACK rc 5`. Aktivna sesija se prekida pri prvom reconnectu (keepAlive timeout ili network drop).
-
-> Za instant kick aktivne sesije (bez čekanja reconnecta) Mosquitto nema out-of-the-box podršku. Prihvaćeni su rizik za v1 — revokirani uređaj ostaje spojen najviše `keepAlive` sekundi (60s).
-
-> **Retained status cleanup:** pri revoke-u backend mora publishati `{ "state": "offline", "ts": ..., "reason": "revoked" }` na `phasmida/{slug}/status` s retained=true kako bi obrisao staru retained online poruku s brokera.
-
----
-
-## 17. Otvorena pitanja
-
-- mTLS po uređaju (zamjena password auth-a klijentskim certifikatima izdatim per device).
-- OTA `firmware-update` komanda i hosting binarja.
-- Per-uređajni rate limiting na brokeru (Mosquitto sam po sebi to ne radi out-of-the-box).
-- Bridge između trenutnog `POST /telemetry` i MQTT-a tijekom prijelaznog razdoblja (oba moraju raditi paralelno).
-- Instant disconnect aktivne sesije pri revoke-u (trenutno: uređaj ostaje spojen do reconnecta, max 60s).
-- Procedura obnove TLS certifikata (Let's Encrypt renewal hook koji reload-a Mosquitto).
+- strict TLS certificate validation in firmware
+- mTLS per device
+- OTA command path (`firmware-update`)
+- stronger runtime parity between `core_s3` and `timer_camera_f` command envelope handling

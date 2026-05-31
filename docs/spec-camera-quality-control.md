@@ -102,7 +102,7 @@ If optional fields are omitted, firmware keeps previously persisted NVS values f
 
 - Firmware currently requires only `cmdId`, `type`, and `params` for `set-camera-quality`.
 - `issuedAt` and `ttlMs` are not enforced by the current `timer_camera` implementation.
-- `cmd/ack` i `events.ts` koriste `millis()` (uptime), ne Unix epoch vrijeme.
+- `cmd/ack` and `events.ts` use `millis()` (uptime), not Unix epoch time.
 - Unknown command types are rejected with `unsupported_command`.
 
 #### Parameter Validation
@@ -280,7 +280,7 @@ After camera reinit completes, firmware publishes effective state on events topi
 }
 ```
 
-Napomena: trenutni `timer_camera` ACK path šalje samo `error.code` (bez `error.message`).
+Note: the current `timer_camera` ACK path returns only `error.code` (without `error.message`).
 
 #### Possible Error Codes
 
@@ -421,7 +421,7 @@ Settings are **persisted in ESP32 NVS (non-volatile storage)**:
   - `bpc` = 1
   - `gainCeiling` = 3
   - `frameDelay` = 0
-- Safe fallback profile (kad traženi profil ne može stabilno inicijalizirati kameru) ostaje:
+- Safe fallback profile (when requested settings cannot initialize camera stably) remains:
   - `jpegQuality` = 12
   - `frameSize` = 9 (SVGA)
 - Firmware may overwrite invalid or unstable runtime settings with safe defaults after failed warmup
