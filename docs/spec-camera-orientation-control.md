@@ -111,11 +111,12 @@ Firmware rejects any other value.
   "status": "rejected",
   "ts": 1778145601000,
   "error": {
-    "code": "invalid_rotation",
-    "message": "rotation must be 0 or 180"
+    "code": "invalid_rotation"
   }
 }
 ```
+
+Napomena: trenutni `timer_camera` ACK path šalje samo `error.code` (bez `error.message`).
 
 #### Possible Error Codes
 
@@ -140,6 +141,7 @@ Firmware rejects any other value.
 - If streaming is active, firmware disconnects the current WebSocket session and reinitializes the camera immediately
 - If streaming is paused, firmware stores the new orientation and applies it on the next camera initialization
 - MQTT deduplication rules are the same as for `set-camera-quality`
+- `ts` i `result.appliedAt` u ACK payloadu su `millis()` vrijednosti (uptime), ne Unix epoch vrijeme
 
 ---
 

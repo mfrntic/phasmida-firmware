@@ -26,6 +26,7 @@ No cloud lock-in tax. No paywalls to read your own sensor data. Just flash, conn
 
 - 🌡️ **Real-time climate telemetry** — temperature, humidity, pressure, light, soil moisture
 - 📷 **Live camera streaming** with quality control for habitat checks and pet-cam moments
+- 🌈 **RGB lighting control** — separate status strip (`set-led`) and RGB grow-light strip (`set-light`)
 - 📡 **MQTT-first architecture** — plug into Home Assistant, Node-RED, n8n, or any broker you like
 - 🖥️ **On-device UI** on the CoreS3 touchscreen (no laptop required to see what's going on)
 - ☁️ **Free cloud dashboard** at [phasmida.eu](https://www.phasmida.eu) — zero backend code to write
@@ -49,7 +50,8 @@ This project is built for **ESP32-class microcontrollers** and **M5Stack** hardw
 - **M5Stack ENV Pro** (BME688) — temperature, humidity, pressure, gas/IAQ
 - **M5Stack DLight** (BH1750) — ambient light (lux)
 - **Capacitive soil moisture probes**
-- **WS2812 / RGB LED** strips for grow light verification
+- **M5GO3 Bottom WS2812** strip (GPIO5, 10 LEDs) — status/identification feedback (`set-led`)
+- **SK6812 RGB Unit** strip (GPIO17, up to 12 LEDs) — light color control (`set-light`) + verification flow
 
 Keywords for the search engines: *ESP32 terrarium monitor, M5Stack CoreS3 firmware, M5Stack Timer Camera firmware, DHT22 ESP32, ENV III sensor, bioactive vivarium IoT, reptile terrarium monitoring, insect keeping IoT, MQTT terrarium, PlatformIO ESP32 project.*
 
@@ -77,7 +79,7 @@ This firmware ships pre-wired to talk to the **Phasmida Smart Cloud API**. The A
 
 👉 **Get your free API key and start monitoring:** [www.phasmida.eu](https://www.phasmida.eu)
 
-Prefer to self-host? The MQTT protocol is fully documented in [`docs/MQTT-PROTOCOL-v1.md`](docs/MQTT-PROTOCOL-v1.md) so you can point the firmware at your own broker any time.
+Prefer to self-host? MQTT topics/payloads are documented in [`docs/MQTT-PROTOCOL-v1.md`](docs/MQTT-PROTOCOL-v1.md).
 
 ## Repository layout
 
@@ -194,7 +196,17 @@ Notes:
 
 See `docs/MQTT-PROTOCOL-v1.md` for contract and payloads.
 
-Current implementation note: MQTT currently uses plain TCP on port 1883 in firmware.
+Lighting-specific command docs:
+
+- `docs/set-light-command.md` — `set-light` payload, validation rules, ACK/result shape, status `led` fields
+- `docs/spec-firmware-v1-2-rgb-soft-hotplug.md` — `start-rgb-verification` session flow
+
+Current firmware behavior: MQTT uses plain TCP on port 1883.
+
+This is true for both firmware targets:
+
+- `core_s3`: `AppConfig::kMqttDefaultPort = 1883`
+- `timer_camera_f`: `CamConfig::kDefaultMqttPort = 1883`
 
 Integration tip:
 

@@ -2,8 +2,8 @@
 title: "Firmware v1.3 Camera Streaming Technical Spec"
 version: "1.1"
 date: "2026-05-14"
-status: "draft"
-author: "Backend Team"
+status: "as-implemented"
+author: "Firmware Team"
 relates-to:
   - "epic-camera-firmware-v1.md"
   - "epic-camera-backend-v1.md"
@@ -18,6 +18,8 @@ relates-to:
 Ovaj dokument je normativni tehnicki kontrakt za firmware tim koji implementira Timer Camera F streaming prema postojecem backendu.
 
 Dokument je pisan prema stvarno implementiranom backend kodu (rute i plugini), ne prema zeljenom buducem ponasanju.
+
+Ako postoji razlika izmedu ovog dokumenta i koda u `src/timer_camera/*`, kod je izvor istine.
 
 ## Izvori istine
 
@@ -167,6 +169,10 @@ Firmware mora tretirati:
 - `4403` kao claim/provisioning error: uredaj jos nije claiman
 - `4000` kao superseded close: backend je zatvorio staru konekciju jer je nova konekcija s istim kredencijalima dosla; ovo nije credential error, firmware treba normalno reconnectati
 
+Napomena za trenutnu implementaciju klijenta:
+- `timer_camera` trenutno pouzdano detektira auth/unclaimed iz handshake reason stringova (`HTTP 401` / `HTTP 403`).
+- U internom `WStype_DISCONNECTED` handleru close code trenutno ostaje `0`, pa se 4401/4403 mapiranje primarno oslanja na handshake reason tekst.
+
 ### Normativne cinjenice iz koda
 
 Backend trenutno:
@@ -268,13 +274,9 @@ Napomene:
 
 ## Reconnect politika
 
-Firmware mora implementirati reconnect s eksponencijalnim backoffom:
-- 1s
-- 2s
-- 4s
-- 8s
-- ...
-- cap na 60s
+Firmware implementira dvije reconnect putanje:
+- Fast path tijekom neuspjelog connect handshaka: 500ms koraci do 5s
+- Standard path nakon aktivne sesije: eksponencijalno 1s -> 2s -> 4s -> ... -> max 60s
 
 Reconnect se pokrece nakon:
 - network error
@@ -286,7 +288,7 @@ Poseban slucaj `4401`:
 - firmware ne smije ulaziti u agresivni reconnect loop
 - preporuka je usporeni retry ili prelazak u `AUTH_FAILED` stanje dok se kredencijali ne promijene
 
-Backend ne salje dodatni remediation signal osim close code `4401`.
+Backend ne salje dodatni remediation signal osim auth/unclaimed zatvaranja konekcije.
 
 ---
 

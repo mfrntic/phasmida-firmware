@@ -102,6 +102,7 @@ If optional fields are omitted, firmware keeps previously persisted NVS values f
 
 - Firmware currently requires only `cmdId`, `type`, and `params` for `set-camera-quality`.
 - `issuedAt` and `ttlMs` are not enforced by the current `timer_camera` implementation.
+- `cmd/ack` i `events.ts` koriste `millis()` (uptime), ne Unix epoch vrijeme.
 - Unknown command types are rejected with `unsupported_command`.
 
 #### Parameter Validation
@@ -262,8 +263,7 @@ After camera reinit completes, firmware publishes effective state on events topi
   "status": "rejected",
   "ts": 1778145601000,
   "error": {
-    "code": "invalid_jpeg_quality",
-    "message": "jpegQuality must be 0–63"
+    "code": "invalid_jpeg_quality"
   }
 }
 ```
@@ -275,11 +275,12 @@ After camera reinit completes, firmware publishes effective state on events topi
   "status": "rejected",
   "ts": 1778145601000,
   "error": {
-    "code": "invalid_frame_size",
-    "message": "frameSize must be one of: 5, 8, 9, 10, 12, 13"
+    "code": "invalid_frame_size"
   }
 }
 ```
+
+Napomena: trenutni `timer_camera` ACK path šalje samo `error.code` (bez `error.message`).
 
 #### Possible Error Codes
 
@@ -409,8 +410,8 @@ Settings are **persisted in ESP32 NVS (non-volatile storage)**:
 **Behavior:**
 - Settings survive device reboot
 - Factory defaults apply if keys missing:
-  - `jpegQuality` = 12
-  - `frameSize` = 9 (SVGA)
+  - `jpegQuality` = 8
+  - `frameSize` = 10 (XGA)
   - `sharpness` = 2
   - `denoise` = 0
   - `lenc` = 1
@@ -420,6 +421,9 @@ Settings are **persisted in ESP32 NVS (non-volatile storage)**:
   - `bpc` = 1
   - `gainCeiling` = 3
   - `frameDelay` = 0
+- Safe fallback profile (kad traženi profil ne može stabilno inicijalizirati kameru) ostaje:
+  - `jpegQuality` = 12
+  - `frameSize` = 9 (SVGA)
 - Firmware may overwrite invalid or unstable runtime settings with safe defaults after failed warmup
 
 ---

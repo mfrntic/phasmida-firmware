@@ -3,20 +3,23 @@
 Ugovor između IoT firmware-a i Phasmida backend-a.
 
 Verzija: 1.0
-Status: Draft for implementation
+Status: As implemented (main branch)
 Vlasnici: Backend tim + Firmware tim
 
 ---
 
 ## 1. Pregled
 
-Uređaji se s backendom dogovaraju preko MQTT brokera (Mosquitto na `phasmida.eu:8883`, **MQTT over TLS**).
+Uređaji se s backendom dogovaraju preko MQTT brokera.
 Backend pretplaćuje sve uplink topice i objavljuje downlink komande.
 
-**Transport:** MQTT 3.1.1 ili 5.0 over TLS 1.2+ (firmware bira što mu odgovara, broker podržava oba).
-**Endpoint:** `mqtts://phasmida.eu:8883`
+**Transport (trenutni firmware):** MQTT 3.1.1 preko plain TCP.
+**Endpoint (default):** `api.phasmida.eu:1883`
+**TLS:** može se uključiti korištenjem porta `8883`, ali trenutna implementacija koristi `setInsecure()` (bez validacije certifikata).
 **Format:** UTF-8 JSON.
-**Vrijeme:** sva vremena u Unix epoch milisekundama (UTC), polje `timestampMs` ili `ts`.
+**Vrijeme:**
+- `core_s3`: Unix epoch ms (`TimeSync`) za `timestampMs` i `ts`
+- `timer_camera_f`: `millis()` za `ts` u `cmd/ack` i `events`
 
 ---
 
@@ -216,6 +219,10 @@ Polja:
 
 Ako se status nije mijenjao, firmware republisha online status svakih **5 minuta** (re-osvježava retained poruku i potvrđuje liveness).
 
+Napomena za targete:
+- `core_s3`: implementira online publish, heartbeat i graceful offline publish.
+- `timer_camera_f`: trenutno postavlja LWT (`offline/unexpected`), ali ne publisha periodični online status.
+
 ---
 
 ## 7. Events payload
@@ -248,7 +255,7 @@ Polja:
 ## 8. Komande (downlink)
 
 Topic: `phasmida/{slug}/cmd`
-QoS: 1, **Retained: ne** (komande za offline uređaj backend zadržava u svojem queue-u, ne na brokeru). Trigger za flush queue-a je dolazak `{ "state": "online" }` poruke na `phasmida/{slug}/status`.
+QoS: 1, **Retained: ne** (komande za offline uređaj backend zadržava u svojem queue-u, ne na brokeru). Trenutni flush trigger preko `{ "state": "online" }` status poruke je relevantan za `core_s3` tok.
 
 ```json
 {
@@ -264,10 +271,27 @@ Polja:
 - `cmdId` (string, obavezno) — ULID ili UUIDv4 generiran na backendu. Firmware ga vraća u ack.
 - `type` (string, obavezno) — vidi listu ispod.
 - `params` (object, obavezno) — parametri specifični za komandu (može biti prazan `{}`).
-- `issuedAt` (int, obavezno) — kada je backend izdao komandu.
-- `ttlMs` (int, obavezno) — koliko dugo komanda vrijedi. Ako uređaj primi komandu nakon `issuedAt + ttlMs`, **ne izvršava je**, šalje ack sa `status: "expired"`.
+- `issuedAt` (int) i `ttlMs` (int):
+  - `core_s3`: obavezno, `expired` se provodi u firmwareu.
+  - `timer_camera_f`: trenutno se ne validira (komanda se obrađuje bez TTL check-a).
 
-### Komande u v1
+### Komande u v1 (po targetu)
+
+| Komanda | `core_s3` | `timer_camera_f` |
+|---------|-----------|------------------|
+| `request-telemetry` | da | ne |
+| `reboot` | da | ne |
+| `set-config` | da | ne |
+| `set-led` | da | ne |
+| `set-light` | da | ne |
+| `start-rgb-verification` | da | ne |
+| `factory-reset` | da | ne |
+| `stream-stop` | ne | da |
+| `stream-start` | ne | da |
+| `set-camera-quality` | ne | da |
+| `set-camera-orientation` | ne | da |
+
+Sve ostalo: `status: "rejected"`, `error.code: "unsupported_command"`.
 
 #### `reboot`
 ```json
@@ -315,6 +339,24 @@ Polja:
 - `color`: slobodan string (firmware mapira što podržava).
 - `durationMs`: 0 = trajno dok ne stigne nova `set-led` komanda.
 
+#### `set-light`
+```json
+{
+  "type": "set-light",
+  "params": { "targetColor": "#FF6200", "brightness": 200 }
+}
+```
+- Kontrola SK6812 RGB Unit trake (GPIO17), neovisno od `set-led`.
+- `targetColor`: obavezno, strogi `#RRGGBB` format.
+- `brightness`: obavezno, integer 0-255.
+- Ack `ok` vraća `result.activeColor`, `result.brightness`, `result.appliedAt`.
+- Ako je aktivan `start-rgb-verification` session: `status: "rejected"`, `error.code: "verification_in_progress"`.
+- Detaljna specifikacija: `docs/set-light-command.md`.
+
+#### `start-rgb-verification`
+- Pokreće soft-hotplug verification session za RGB modul.
+- Detalji session flow-a, validacija i event payloadi: `docs/spec-firmware-v1-2-rgb-soft-hotplug.md`.
+
 #### `stream-stop`
 ```json
 { "type": "stream-stop", "params": {} }
@@ -352,7 +394,6 @@ Polja:
 
 #### Reserved (nije implementirano u v1)
 - `firmware-update` — rezervirano, doći će s OTA infrastrukturom.
-- `set-light` — implementirano u fw `8bb5f56`; vidi `docs/set-light-command.md` za Cloud integracijsku specifikaciju.
 
 ---
 
@@ -361,7 +402,7 @@ Polja:
 Topic: `phasmida/{slug}/cmd/ack`
 QoS: 1, Retained: ne.
 
-Firmware **mora** odgovoriti ack-om za **svaku** primljenu komandu, bez obzira na ishod.
+Firmware šalje ack za obrađene komande; ponašanje kod duplicate poruka je target-specifično (vidi §11).
 
 ```json
 {
@@ -383,7 +424,7 @@ Polja:
   - `error` — pokušano izvršiti, neuspjeh (vidi `error` polje).
   - `rejected` — komanda odbijena (npr. nevalidni parametri, `confirm: false`).
   - `expired` — primljena nakon isteka `ttlMs`.
-- `ts` — vrijeme izvršenja.
+- `ts` — vrijeme izvršenja (`core_s3`: Unix epoch ms, `timer_camera_f`: `millis()`).
 - `result` (opcionalno) — povratni podaci specifični za komandu.
 - `error` (opcionalno) — `{ "code": "...", "message": "..." }` kod statusa `error` ili `rejected`.
 
@@ -447,10 +488,14 @@ QoS 1 jamči at-least-once, što znači da poruka može stići dvaput. Pravila:
 |-------|---------------|---------|
 | Telemetry | Backend | `(device_id, msgId)` u zadnjih 5 minuta |
 | Events | Backend | `(device_id, msgId)` u zadnjih 5 minuta |
-| Command | Firmware | `cmdId` — ako je već izvršen, samo re-pošalji ack |
+| Command | Firmware | `cmdId` dedup je implementiran na oba targeta; duplicate handling nije isti |
 | Ack | Backend | `cmdId` — drugi ack se ignorira |
 
-Firmware **mora** generirati `msgId` u ULID ili UUIDv4 formatu. Backend generira `cmdId`.
+Napomena:
+- `core_s3`: duplicate command trenutno re-acka sa `status: "ok"`.
+- `timer_camera_f`: duplicate command trenutno ignorira bez ponovnog ACK-a.
+
+Firmware generira `msgId` za telemetry/events payloadove; backend generira `cmdId`.
 
 ---
 
@@ -477,25 +522,22 @@ Firmware **mora** generirati `msgId` u ULID ili UUIDv4 formatu. Backend generira
 
 ## 14. Sigurnost — trenutni status
 
-- **MQTT over TLS** na portu `8883` od početka. Plain TCP (1883) nije izložen prema vani.
-- Server koristi javno priznati TLS certifikat (Let's Encrypt) za `phasmida.eu`. Firmware **mora** validirati server certifikat protiv standardnog CA bundle-a; pinning nije obavezan u v1.
-- API ključ se šalje kao MQTT password preko šifriranog kanala.
-- Auth na razini uređaja je per-device username/password (vidi §3). mTLS s klijentskim certifikatima je opcija za kasnije.
+- Firmware default transport je plain TCP na portu `1883`.
+- TLS put preko `8883` postoji, ali trenutna implementacija ne validira certifikat (`setInsecure()`).
+- Auth na razini uređaja je per-device username/password (vidi §3).
+- mTLS i strict cert validation nisu implementirani u trenutnom firmwareu.
 
 ---
 
 ## 15. Primjeri
 
-### Konekcija (pseudo-kod)
+### Konekcija (pseudo-kod, trenutno stanje)
 
 ```text
 client.connect({
-  protocol: "mqtts",
-  host: "phasmida.eu",
-  port: 8883,
-  tls: {
-    rejectUnauthorized: true   // validiraj server cert protiv sistemskog CA bundle-a
-  },
+  protocol: "mqtt",
+  host: "api.phasmida.eu",
+  port: 1883,
   clientId: "phasmida-aabbccddeeff",
   username: "aabbccddeeff",
   password: "<api_key>",
