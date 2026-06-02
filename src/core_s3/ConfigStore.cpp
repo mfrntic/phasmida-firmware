@@ -73,6 +73,26 @@ void ConfigStore::setMqttBroker(const String& host, uint16_t port) {
   }
 }
 
+void ConfigStore::setTimezone(const String& posixTz) {
+  if (_open) {
+    _prefs.putString(AppConfig::kNvsTimezone, posixTz);
+  }
+}
+
+String ConfigStore::loadTimezone() {
+  if (!_open) {
+    return "";
+  }
+  return _prefs.getString(AppConfig::kNvsTimezone, "");
+}
+
+bool ConfigStore::hasTimezoneConfigured() {
+  if (!_open) {
+    return false;
+  }
+  return !_prefs.getString(AppConfig::kNvsTimezone, "").isEmpty();
+}
+
 void ConfigStore::clear() {
   if (_open) {
     _prefs.clear();

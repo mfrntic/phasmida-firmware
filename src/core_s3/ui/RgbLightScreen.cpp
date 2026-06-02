@@ -4,6 +4,43 @@
 #include "ConfigStore.h"
 
 #include <M5Unified.h>
+#include <time.h>
+
+namespace {
+
+constexpr int16_t kClockRightX = 306;
+constexpr int16_t kClockTopY = 24;
+constexpr int16_t kClockAreaX = 190;
+constexpr int16_t kClockAreaY = 20;
+constexpr int16_t kClockAreaW = 120;
+constexpr int16_t kClockAreaH = 24;
+
+template<typename GFX>
+void drawClock(GFX& gfx, bool clearBackground, bool timezoneConfigured) {
+  if (clearBackground) {
+    gfx.fillRect(kClockAreaX, kClockAreaY, kClockAreaW, kClockAreaH, TFT_BLACK);
+  }
+
+  time_t now = time(nullptr);
+  gfx.setFont(&lgfx::fonts::FreeSans9pt7b);
+  gfx.setTextColor(0xC618U, TFT_BLACK);
+  gfx.setTextDatum(textdatum_t::top_right);
+
+  if (now > 1700000000) {
+    struct tm tmLocal;
+    localtime_r(&now, &tmLocal);
+    char timeBuf[24];
+    strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &tmLocal);
+    if (!timezoneConfigured) {
+      strlcat(timeBuf, " UTC", sizeof(timeBuf));
+    }
+    gfx.drawString(timeBuf, kClockRightX, kClockTopY);
+  } else {
+    gfx.drawString(timezoneConfigured ? "--:--:--" : "--:--:-- UTC", kClockRightX, kClockTopY);
+  }
+}
+
+}  // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -20,6 +57,7 @@ void RgbLightScreen::setNavInfo(int myIdx, int total) {
 void RgbLightScreen::onEnter() {
   _lastRgbOn    = _ledMgr.isLightActive();
   _lastBottomOn = _ledMgr.isBottomStripActive();
+  _lastClockEpochSec = -1;
   draw();
 }
 
@@ -50,7 +88,7 @@ void RgbLightScreen::_render(GFX& gfx) {
   gfx.setTextColor(0xC618U, TFT_BLACK);
   gfx.setTextDatum(textdatum_t::middle_center);
 
-  const char* title = "LED";
+  const char* title = "LIGHTING";
   const int16_t kCharStep = gfx.fontHeight() + 2;
   int16_t totalH = 0;
   for (const char* p = title; *p; ++p) totalH += kCharStep;
@@ -68,6 +106,8 @@ void RgbLightScreen::_render(GFX& gfx) {
   constexpr int16_t kContentX = 30;
   constexpr int16_t kContentW = 280;
   constexpr int16_t kContentCenterX = kContentX + (kContentW / 2);
+
+  drawClock(gfx, false, _configStore.hasTimezoneConfigured());
 
   bool rgbOn    = _ledMgr.isLightActive();
   bool bottomOn = _ledMgr.isBottomStripActive();
@@ -103,10 +143,21 @@ void RgbLightScreen::_render(GFX& gfx) {
 void RgbLightScreen::onUpdate() {
   bool rgbOn    = _ledMgr.isLightActive();
   bool bottomOn = _ledMgr.isBottomStripActive();
+  const int64_t nowSec = static_cast<int64_t>(time(nullptr));
+  const bool clockChanged = (nowSec > 1700000000) && (nowSec != _lastClockEpochSec);
   if (rgbOn != _lastRgbOn || bottomOn != _lastBottomOn) {
     _lastRgbOn    = rgbOn;
     _lastBottomOn = bottomOn;
+    if (nowSec > 1700000000) {
+      _lastClockEpochSec = nowSec;
+    }
     draw();
+    return;
+  }
+
+  if (clockChanged) {
+    _lastClockEpochSec = nowSec;
+    drawClock(M5.Display, true, _configStore.hasTimezoneConfigured());
   }
 }
 

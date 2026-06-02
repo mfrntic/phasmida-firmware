@@ -29,6 +29,9 @@ public:
   void setTelemetryInterval(uint32_t ms);
   void setWifi(const String& ssid, const String& pass);
   void setMqttBroker(const String& host, uint16_t port);
+  void setTimezone(const String& posixTz);
+  String loadTimezone();
+  bool hasTimezoneConfigured();
   void clear();                                          // factory-reset: obriši sve NVS ključeve u namespaceu
 
   // RGB set-light persistence

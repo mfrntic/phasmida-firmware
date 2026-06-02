@@ -211,6 +211,7 @@ Envelope notes:
 | `request-telemetry` | yes | no |
 | `reboot` | yes | no |
 | `set-config` | yes | no |
+| `set-timezone` | yes | no |
 | `set-led` | yes | no |
 | `set-light` | yes | no |
 | `start-rgb-verification` | yes | no |

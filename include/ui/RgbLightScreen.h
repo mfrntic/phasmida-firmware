@@ -45,6 +45,7 @@ private:
 
   int _totalScreens = 0;
   int _myIndex      = 0;
+  int64_t _lastClockEpochSec = -1;
 
   // Cached state for onUpdate() diff — avoids redraw every loop tick
   bool _lastRgbOn    = false;

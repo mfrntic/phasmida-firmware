@@ -89,7 +89,7 @@ constexpr uint8_t kDefaultWpc = 1;                               // bool 0/1
 constexpr uint8_t kDefaultBpc = 1;                               // bool 0/1
 constexpr uint8_t kDefaultGainCeiling = static_cast<uint8_t>(GAINCEILING_16X);
 constexpr uint8_t kDefaultVFlip = 1;                             // bool 0/1, current upright housing default
-constexpr uint8_t kDefaultHMirror = 1;                           // bool 0/1, current upright housing default
+constexpr uint8_t kDefaultHMirror = 0;                           // bool 0/1, disable L/R mirror by default
 
 // ── Misc ─────────────────────────────────────────────────────────────────────
 constexpr const char* kFwVersion = "1.3.0";

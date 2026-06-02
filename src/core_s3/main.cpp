@@ -157,6 +157,16 @@ String provisioningApName() {
   return String(AppConfig::kProvisioningApPrefix) + "-" + suffix;
 }
 
+bool isValidPosixTimezone(const String& tz) {
+  if (tz.isEmpty()) return false;
+  if (tz.length() > 64) return false;
+  for (size_t i = 0; i < tz.length(); ++i) {
+    char c = tz.charAt(i);
+    if (c < 33 || c > 126) return false;
+  }
+  return true;
+}
+
 
 
 static void restorePersistedLightIfValid() {
@@ -376,6 +386,29 @@ void handleMqttCommand(const String& topicStr, const String& payloadStr) {
     g_nextTelemetryAt = millis() + g_telemetryIntervalMs;
     char resultJson[48];
     snprintf(resultJson, sizeof(resultJson), "{\"telemetryIntervalMs\":%lu}", (unsigned long)g_telemetryIntervalMs);
+    publishCommandAck(cmdId, "ok", nullptr, nullptr, resultJson);
+    return;
+  }
+
+  if (type == "set-timezone") {
+    String posixTz = cmd["params"]["posixTz"] | "";
+    if (!isValidPosixTimezone(posixTz)) {
+      publishCommandAck(cmdId, "rejected", "invalid_timezone",
+                        "params.posixTz must be a non-empty POSIX TZ string (max 64 chars)");
+      return;
+    }
+
+    if (!g_timeSync.applyTimezone(posixTz)) {
+      publishCommandAck(cmdId, "error", "timezone_apply_failed",
+                        "Failed to apply timezone on device");
+      return;
+    }
+
+    g_configStore.setTimezone(posixTz);
+    char resultJson[128];
+    snprintf(resultJson, sizeof(resultJson),
+             "{\"appliedTz\":\"%s\",\"clockMode\":\"local\"}",
+             posixTz.c_str());
     publishCommandAck(cmdId, "ok", nullptr, nullptr, resultJson);
     return;
   }
@@ -648,6 +681,16 @@ void setup() {
 
   g_runtimeCfg = g_configStore.load();
   g_telemetryIntervalMs = g_runtimeCfg.telemetryIntervalMs;
+  String persistedTimezone = g_configStore.loadTimezone();
+  if (!persistedTimezone.isEmpty()) {
+    if (g_timeSync.applyTimezone(persistedTimezone)) {
+      logf("Timezone from NVS applied: %s", persistedTimezone.c_str());
+    } else {
+      logf("Timezone from NVS invalid, falling back to UTC: %s", persistedTimezone.c_str());
+    }
+  } else {
+    logLine("Timezone not configured; clock mode defaults to UTC");
+  }
   logBootStep(bootStep, "Runtime configuration loaded");
 
   logf("Config loaded: WiFi SSID='%s', MQTT host='%s:%u'",

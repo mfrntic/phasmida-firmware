@@ -13,6 +13,7 @@ bool CameraConfigStore::begin() {
     // Migration v7: seed camera orientation defaults to NVS.
     // Migration v8: promote untouched devices from safe defaults to preferred high quality defaults.
     // Migration v9: seed frame delay default.
+    // Migration v10: disable historical default horizontal mirror (L/R reversal).
     uint8_t qualityVer = _prefs.getUChar(CamConfig::kNvsQualityVer, 0);
     if (qualityVer < 1) {
       _prefs.putUChar(CamConfig::kNvsJpegQuality, CamConfig::kDefaultJpegQuality);
@@ -118,6 +119,16 @@ bool CameraConfigStore::begin() {
                       CamConfig::kDefaultFrameDelay);
       }
       _prefs.putUChar(CamConfig::kNvsQualityVer, 9);
+    }
+
+    if (qualityVer < 10) {
+      uint8_t storedVFlip = _prefs.getUChar(CamConfig::kNvsVFlip, CamConfig::kDefaultVFlip);
+      uint8_t storedHMirror = _prefs.getUChar(CamConfig::kNvsHMirror, CamConfig::kDefaultHMirror);
+      if (storedVFlip == 1 && storedHMirror == 1) {
+        _prefs.putUChar(CamConfig::kNvsHMirror, 0);
+        Serial.println("[CameraConfigStore] Migration v10: hmirror corrected 1 -> 0 (disable L/R mirror)");
+      }
+      _prefs.putUChar(CamConfig::kNvsQualityVer, 10);
     }
   }
   return _open;

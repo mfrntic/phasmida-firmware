@@ -1,9 +1,34 @@
 #include <net/TimeSync.h>
-#include <app_config.h>
 #include <sys/time.h>
+#include <time.h>
+#include <stdlib.h>
 
 void TimeSync::begin() {
-  configTime(0, 0, "pool.ntp.org", "time.google.com", "time.windows.com");
+  clearTimezone();
+  configTime(0, 0,
+             "pool.ntp.org",
+             "time.google.com",
+             "time.windows.com");
+}
+
+bool TimeSync::applyTimezone(const String& posixTz) {
+  if (posixTz.isEmpty()) {
+    return false;
+  }
+  if (setenv("TZ", posixTz.c_str(), 1) != 0) {
+    return false;
+  }
+  tzset();
+  _activeTimezone = posixTz;
+  _hasLocalTimezone = true;
+  return true;
+}
+
+void TimeSync::clearTimezone() {
+  setenv("TZ", "UTC0", 1);
+  tzset();
+  _activeTimezone = "";
+  _hasLocalTimezone = false;
 }
 
 bool TimeSync::sync(uint32_t timeoutMs) {
@@ -16,6 +41,14 @@ bool TimeSync::sync(uint32_t timeoutMs) {
 
 bool TimeSync::isSynced() const {
   return unixEpochMs() > 1700000000000ULL;
+}
+
+bool TimeSync::hasLocalTimezone() const {
+  return _hasLocalTimezone;
+}
+
+String TimeSync::activeTimezone() const {
+  return _activeTimezone;
 }
 
 uint64_t TimeSync::unixEpochMs() const {

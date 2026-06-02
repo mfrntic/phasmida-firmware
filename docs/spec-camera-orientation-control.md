@@ -1,7 +1,7 @@
 ---
 title: "Camera Orientation Control — MQTT Command Specification"
-version: "1.0"
-date: "2026-05-29"
+version: "1.1"
+date: "2026-06-02"
 status: "active"
 author: "Firmware Team"
 relates-to:
@@ -16,12 +16,13 @@ relates-to:
 
 This document defines the MQTT command interface for dynamically controlling **Timer Camera F** image orientation without full firmware redeploy.
 
-Current firmware supports two persisted orientation modes:
+Current firmware accepts two command presets:
 
-- `0` degrees: sensor image is sent without the default 180 degree correction
-- `180` degrees: sensor image is rotated by 180 degrees and matches the current housing-upright default
+- `0` degrees: applies `vflip=0`, `hmirror=0`
+- `180` degrees: applies `vflip=1`, `hmirror=1`
 
-The selected orientation is saved to NVS and survives restart or power loss.
+Current default orientation profile is `vflip=1`, `hmirror=0` (upright view without left/right mirror).
+Selected orientation flags are saved to NVS and survive restart or power loss.
 
 ---
 
@@ -78,8 +79,8 @@ The selected orientation is saved to NVS and survives restart or power loss.
 
 | Value | Meaning |
 |-------|---------|
-| `0` | Disable the current 180 degree correction (`vflip=0`, `hmirror=0`) |
-| `180` | Enable 180 degree correction (`vflip=1`, `hmirror=1`) |
+| `0` | Apply preset `vflip=0`, `hmirror=0` |
+| `180` | Apply preset `vflip=1`, `hmirror=1` |
 
 Firmware rejects any other value.
 
@@ -131,8 +132,8 @@ Note: current `timer_camera` ACK path sends only `error.code` (without `error.me
 
 - Orientation is stored in NVS as the sensor flags `vflip` and `hmirror`
 - Successful command changes survive restart and power loss
-- Existing devices migrate to the current default orientation during firmware upgrade
-- Migration preserves the current visual behavior of already deployed devices
+- Existing devices may be migrated to the current default profile during firmware upgrade
+- Current migration path corrects historical horizontal mirroring defaults
 
 ---
 

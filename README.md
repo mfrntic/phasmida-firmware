@@ -25,7 +25,7 @@ No cloud lock-in tax. No paywalls to read your own sensor data. Just flash, conn
 ## ✨ What you get out of the box
 
 - 🌡️ **Real-time climate telemetry** — temperature, humidity, pressure, light, soil moisture
-- 📷 **Live camera streaming** with quality control for habitat checks and pet-cam moments
+- 📷 **Live camera streaming** with quality and orientation control for habitat checks and pet-cam moments
 - 🌈 **RGB lighting control** — separate status strip (`set-led`) and RGB grow-light strip (`set-light`)
 - 📡 **MQTT-first architecture** — plug into Home Assistant, Node-RED, n8n, or any broker you like
 - 🖥️ **On-device UI** on the CoreS3 touchscreen (no laptop required to see what's going on)
@@ -62,7 +62,7 @@ Two PlatformIO environments, one shared codebase:
 | Target              | Hardware                  | Role                                         |
 | ------------------- | ------------------------- | -------------------------------------------- |
 | `core_s3` (default) | M5Stack CoreS3 (ESP32-S3) | Sensor hub: UI + probes + MQTT publishing    |
-| `timer_camera_f`    | M5Stack Timer Camera F    | Camera streaming + image quality control     |
+| `timer_camera_f`    | M5Stack Timer Camera F    | Camera streaming + image quality/orientation control |
 
 Build system: **PlatformIO**.
 
@@ -200,6 +200,11 @@ Lighting-specific command docs:
 
 - `docs/set-light-command.md` — `set-light` payload, validation rules, ACK/result shape, status `led` fields
 - `docs/spec-firmware-v1-2-rgb-soft-hotplug.md` — `start-rgb-verification` session flow
+
+Camera command docs:
+
+- `docs/spec-camera-quality-control.md` — `set-camera-quality` payload, validation and ACK contract
+- `docs/spec-camera-orientation-control.md` — `set-camera-orientation` (`rotation: 0 | 180`) contract
 
 Current firmware behavior: MQTT uses plain TCP on port 1883.
 

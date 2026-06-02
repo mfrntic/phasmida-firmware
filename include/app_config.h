@@ -43,6 +43,7 @@ constexpr const char* kNvsWifiPass = "wifi_pass";
 constexpr const char* kNvsMqttHost = "mqtt_host";
 constexpr const char* kNvsMqttPort = "mqtt_port";
 constexpr const char* kNvsTelemetryInterval = "tlm_int_ms";
+constexpr const char* kNvsTimezone = "timezone";
 
 // Persisted RGB set-light state (survives reboot)
 constexpr const char* kNvsLightColor      = "light_color";  // uint32_t packed RGB
