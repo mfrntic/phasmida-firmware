@@ -126,3 +126,13 @@ PersistedLightState ConfigStore::loadLightState() {
   s.valid         = true;
   return s;
 }
+
+void ConfigStore::setLightLocalOverride(bool enabled) {
+  if (!_open) return;
+  _prefs.putBool(AppConfig::kNvsLightLocalOverride, enabled);
+}
+
+bool ConfigStore::isLightLocalOverrideActive() {
+  if (!_open) return false;
+  return _prefs.getBool(AppConfig::kNvsLightLocalOverride, false);
+}

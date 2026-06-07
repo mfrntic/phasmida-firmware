@@ -170,6 +170,10 @@ bool isValidPosixTimezone(const String& tz) {
 
 
 static void restorePersistedLightIfValid() {
+  if (g_configStore.isLightLocalOverrideActive()) {
+    logLine("light restore skipped: local override active");
+    return;
+  }
   PersistedLightState ls = g_configStore.loadLightState();
   if (!ls.valid) return;
   g_ledMgr.applySetLight(ls.color, ls.brightness, ls.cmdId);
@@ -430,6 +434,12 @@ void handleMqttCommand(const String& topicStr, const String& payloadStr) {
       return;
     }
 
+    if (g_configStore.isLightLocalOverrideActive()) {
+      publishCommandAck(cmdId, "rejected", "local_override_active",
+                        "Local light OFF override is active");
+      return;
+    }
+
     // Validate targetColor — must be "#RRGGBB"
     const char* colorStr = cmd["params"]["targetColor"] | "";
     CRGB targetColor;
@@ -457,6 +467,46 @@ void handleMqttCommand(const String& topicStr, const String& payloadStr) {
     char resultJson[96];
     snprintf(resultJson, sizeof(resultJson),
              "{\"activeColor\":\"%s\",\"brightness\":%d,\"appliedAt\":%llu}",
+             activeColorHex, brightness, (unsigned long long)appliedAt);
+    publishCommandAck(cmdId, "ok", nullptr, nullptr, resultJson);
+    return;
+  }
+
+  if (type == "force-light-on") {
+    // Keep verification safety rule consistent with set-light.
+    if (g_rgbVerification.isPending()) {
+      publishCommandAck(cmdId, "rejected", "verification_in_progress",
+                        "RGB verification session is active");
+      return;
+    }
+
+    const char* colorStr = cmd["params"]["targetColor"] | "";
+    CRGB targetColor;
+    if (!LedManager::parseHexColor(colorStr, targetColor)) {
+      publishCommandAck(cmdId, "rejected", "invalid_color",
+                        "targetColor must be a valid #RRGGBB hex string");
+      return;
+    }
+
+    int brightness = cmd["params"]["brightness"] | -1;
+    if (brightness < 0 || brightness > 255) {
+      publishCommandAck(cmdId, "rejected", "invalid_brightness",
+                        "brightness must be 0-255");
+      return;
+    }
+
+    g_configStore.setLightLocalOverride(false);
+
+    uint64_t appliedAt = g_timeSync.unixEpochMs();
+    g_ledMgr.applySetLight(targetColor, static_cast<uint8_t>(brightness), cmdId);
+    g_configStore.saveLightState(targetColor, static_cast<uint8_t>(brightness), cmdId);
+
+    char activeColorHex[8];
+    snprintf(activeColorHex, sizeof(activeColorHex), "#%02X%02X%02X",
+             targetColor.r, targetColor.g, targetColor.b);
+    char resultJson[128];
+    snprintf(resultJson, sizeof(resultJson),
+             "{\"activeColor\":\"%s\",\"brightness\":%d,\"appliedAt\":%llu,\"localOverrideCleared\":true}",
              activeColorHex, brightness, (unsigned long long)appliedAt);
     publishCommandAck(cmdId, "ok", nullptr, nullptr, resultJson);
     return;

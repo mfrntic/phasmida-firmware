@@ -175,9 +175,11 @@ void RgbLightScreen::onVerticalTouch(int32_t /*x*/, int32_t y) {
 
 void RgbLightScreen::_toggleRgbUnit() {
   if (_ledMgr.isLightActive()) {
-    // Local OFF = temporary — keep NVS intact so cloud color survives reboot
+    // Local OFF has priority over regular cloud set-light commands.
     _ledMgr.setRgbUnitOff();
+    _configStore.setLightLocalOverride(true);
   } else {
+    _configStore.setLightLocalOverride(false);
     // Prefer in-memory state (LedManager keeps _toColor/_targetBrightness even when off)
     String cmdId = _ledMgr.lastSetLightCmdId();
     if (cmdId.length() > 0) {

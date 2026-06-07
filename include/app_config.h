@@ -49,16 +49,18 @@ constexpr const char* kNvsTimezone = "timezone";
 constexpr const char* kNvsLightColor      = "light_color";  // uint32_t packed RGB
 constexpr const char* kNvsLightBrightness = "light_brt";    // uint8_t
 constexpr const char* kNvsLightCmdId      = "light_cmd";
+constexpr const char* kNvsLightLocalOverride = "light_lovr"; // bool: local OFF has priority over set-light
 
 // LED hardware — M5GO3 Bottom (built-in WS2812 on M5-Bus pin 8 = CoreS3 GPIO5)
 constexpr uint8_t  kM5Go3BottomLedPin   = 5;   // M5-Bus RGB signal → CoreS3 GPIO5
 constexpr uint8_t  kM5Go3BottomLedCount = 10;
 
-// SK6812 RGB Unit — PORT.C (G17/G18); data on G17
-// Daisy-chain: up to 4 units × 3 LEDs = 12 total (indices 0-11).
-// Unit 1 = LED[0..2], Unit 2 = LED[3..5], Unit 3 = LED[6..8], Unit 4 = LED[9..11]
+// External RGB chain on PORT.C (G17/G18); data on G17.
+// This value is treated as the maximum addressed chain length so the same
+// firmware works with both short RGB Unit chains and longer NeoPixel strips.
+// Extra addressed pixels are ignored when fewer LEDs are physically connected.
 constexpr uint8_t  kRgbUnitLedPin     = 17;          // PORT.C data → CoreS3 G17
-constexpr uint8_t  kRgbUnitLedCount   = 12;          // 4 units × 3 LEDs
+constexpr uint8_t  kRgbUnitLedCount   = 60;          // max addressed external chain length
 
 // Soil Moisture probe — M5Stack Unit Earth on CoreS3 PORT.B
 constexpr uint8_t kSoilMoistureAnalogPin   = 8;   // PORT.B AOUT (Analog Output, grey wire)

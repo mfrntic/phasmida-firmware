@@ -26,6 +26,8 @@ Both can run in parallel.
 - Visual output is uniform over all SK6812 LEDs.
 - Brightness is applied per LED via `nscale8_video()`.
 - Command is blocked while an RGB verification session is active (`start-rgb-verification`).
+- If the user turns RGB Unit off locally on device UI, regular `set-light` is rejected until local override is cleared.
+- `force-light-on` is the explicit cloud override command that clears local override and applies light state.
 
 ---
 
@@ -122,6 +124,39 @@ Known `error.code` values for `set-light` path:
 | `invalid_color` | `targetColor` missing/invalid format |
 | `invalid_brightness` | `brightness` missing or out of 0-255 |
 | `verification_in_progress` | `set-light` sent during active verification session |
+| `local_override_active` | Local UI OFF override is active; use `force-light-on` |
+
+---
+
+## `force-light-on` command
+
+`force-light-on` uses the same payload shape as `set-light` and is intended for explicit server-side override when local OFF lock is active.
+
+```json
+{
+  "cmdId": "01HXYZK6H9B5O2Q3R6S8T0U1V4",
+  "type": "force-light-on",
+  "issuedAt": 1735000000000,
+  "ttlMs": 30000,
+  "params": {
+    "targetColor": "#FF6200",
+    "brightness": 200
+  }
+}
+```
+
+`force-light-on` behavior:
+
+- Clears local OFF override lock.
+- Applies color and brightness immediately.
+- Persists state for reconnect/boot restore.
+- Is rejected during active verification session (`verification_in_progress`).
+
+Success ACK result extends `set-light` response with:
+
+| `result` field | Description |
+|----------------|-------------|
+| `localOverrideCleared` | Always `true` on successful `force-light-on` |
 
 ---
 

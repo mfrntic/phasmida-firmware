@@ -11,7 +11,7 @@
 //   1. M5GO3 Bottom built-in: 10x WS2812, CoreS3 GPIO5 (M5-Bus RGB signal)
 //      Controlled via applyCommand() / set-led command.
 //
-//   2. SK6812 RGB Unit: up to 12 LEDs (4 units × 3), CoreS3 GPIO17 (PORT.C)
+//   2. External RGB chain (SK6812/WS2812-compatible), CoreS3 GPIO17 (PORT.C)
 //      Controlled via applySetLight() / set-light command.
 //      Instant color apply, per-command brightness.
 //

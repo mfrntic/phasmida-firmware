@@ -38,6 +38,8 @@ public:
   void saveLightState(CRGB color, uint8_t brightness, const String& cmdId);
   void clearLightState();
   PersistedLightState loadLightState();
+  void setLightLocalOverride(bool enabled);
+  bool isLightLocalOverrideActive();
 
 private:
   Preferences _prefs;

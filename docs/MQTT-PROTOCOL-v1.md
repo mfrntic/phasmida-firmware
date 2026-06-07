@@ -214,6 +214,7 @@ Envelope notes:
 | `set-timezone` | yes | no |
 | `set-led` | yes | no |
 | `set-light` | yes | no |
+| `force-light-on` | yes | no |
 | `start-rgb-verification` | yes | no |
 | `factory-reset` | yes | no |
 | `stream-stop` | no | yes |
