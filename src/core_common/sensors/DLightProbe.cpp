@@ -6,10 +6,6 @@
 #include <ui/DLightScreen.h>
 
 namespace {
-constexpr uint8_t  kI2cSda  = 2;
-constexpr uint8_t  kI2cScl  = 1;
-constexpr uint32_t kI2cFreq = 400000U;
-
 bool i2cPing(uint8_t addr) {
   Wire.beginTransmission(addr);
   return Wire.endTransmission() == 0;
@@ -32,18 +28,18 @@ const char* DLightProbe::telemetryType() const {
 }
 
 bool DLightProbe::detect() {
-  Wire.begin(kI2cSda, kI2cScl, kI2cFreq);
+  Wire.begin(AppConfig::kI2cSda, AppConfig::kI2cScl, AppConfig::kI2cFreq);
   return i2cPing(_i2cAddr);
 }
 
 bool DLightProbe::init() {
-  Wire.begin(kI2cSda, kI2cScl, kI2cFreq);
+  Wire.begin(AppConfig::kI2cSda, AppConfig::kI2cScl, AppConfig::kI2cFreq);
   if (!i2cPing(_i2cAddr)) {
     _isInitialized = false;
     return false;
   }
 
-  _sensor.begin(&Wire, kI2cSda, kI2cScl, kI2cFreq);
+  _sensor.begin(&Wire, AppConfig::kI2cSda, AppConfig::kI2cScl, AppConfig::kI2cFreq);
   _sensor.setMode(CONTINUOUSLY_H_RESOLUTION_MODE);
   _isInitialized = true;
   return true;

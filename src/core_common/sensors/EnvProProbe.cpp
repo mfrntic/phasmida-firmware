@@ -2,14 +2,12 @@
 
 #include <Wire.h>
 
+#include <app_config.h>
 #include <ui/EnvProScreen.h>
 #include <ui/EnvSensorScreen.h>
 
 namespace {
-constexpr uint8_t  kI2cSda     = 2;
-constexpr uint8_t  kI2cScl     = 1;
-constexpr uint32_t kI2cFreq    = 400000U;
-constexpr uint8_t  kBme688Addr = 0x77;
+constexpr uint8_t  kBme688Addr    = 0x77;
 constexpr uint32_t kStaleSampleMs = 30000;
 
 bool i2cPing(uint8_t addr) {
@@ -26,7 +24,7 @@ EnvProProbe::EnvProProbe(EnvSensorScreen* basicScreen, EnvProScreen* proScreen)
 }
 
 bool EnvProProbe::detect() {
-  Wire.begin(kI2cSda, kI2cScl, kI2cFreq);
+  Wire.begin(AppConfig::kI2cSda, AppConfig::kI2cScl, AppConfig::kI2cFreq);
   return i2cPing(kBme688Addr);
 }
 

@@ -51,7 +51,22 @@ constexpr const char* kNvsLightBrightness = "light_brt";    // uint8_t
 constexpr const char* kNvsLightCmdId      = "light_cmd";
 constexpr const char* kNvsLightLocalOverride = "light_lovr"; // bool: local OFF has priority over set-light
 
-// LED hardware — M5GO3 Bottom (built-in WS2812 on M5-Bus pin 8 = CoreS3 GPIO5)
+// LED and probe pins are board specific.
+#if defined(PHASMIDA_TARGET_ATOMS3_LITE)
+// ATOM S3 Lite target (headless):
+// - Built-in RGB indicator LED is used as the "bottom" strip replacement.
+// - External RGB chain can be connected on a free GPIO pin.
+// - Soil moisture defaults use exposed GPIO header pins.
+constexpr uint8_t  kM5Go3BottomLedPin   = 35;
+constexpr uint8_t  kM5Go3BottomLedCount = 1;
+
+constexpr uint8_t  kRgbUnitLedPin       = 5;
+constexpr uint8_t  kRgbUnitLedCount     = 60;
+
+constexpr uint8_t kSoilMoistureAnalogPin   = 8;
+constexpr uint8_t kSoilMoistureDigitalPin  = 7;
+#else
+// CoreS3 + M5GO3 Bottom defaults.
 constexpr uint8_t  kM5Go3BottomLedPin   = 5;   // M5-Bus RGB signal → CoreS3 GPIO5
 constexpr uint8_t  kM5Go3BottomLedCount = 10;
 
@@ -59,12 +74,25 @@ constexpr uint8_t  kM5Go3BottomLedCount = 10;
 // This value is treated as the maximum addressed chain length so the same
 // firmware works with both short RGB Unit chains and longer NeoPixel strips.
 // Extra addressed pixels are ignored when fewer LEDs are physically connected.
-constexpr uint8_t  kRgbUnitLedPin     = 17;          // PORT.C data → CoreS3 G17
-constexpr uint8_t  kRgbUnitLedCount   = 60;          // max addressed external chain length
+constexpr uint8_t  kRgbUnitLedPin       = 17;  // PORT.C data → CoreS3 G17
+constexpr uint8_t  kRgbUnitLedCount     = 60;  // max addressed external chain length
 
 // Soil Moisture probe — M5Stack Unit Earth on CoreS3 PORT.B
 constexpr uint8_t kSoilMoistureAnalogPin   = 8;   // PORT.B AOUT (Analog Output, grey wire)
 constexpr uint8_t kSoilMoistureDigitalPin  = 9;   // PORT.B DOUT (Digital Output, threshold via trim-pot)
+#endif
+
+// I2C bus pins — board specific.
+// CoreS3 PORT.A (Grove): SDA=2, SCL=1.
+// AtomS3 Lite Grove port: SDA=38, SCL=39.
+#if defined(PHASMIDA_TARGET_ATOMS3_LITE)
+constexpr uint8_t kI2cSda  = 38;
+constexpr uint8_t kI2cScl  = 39;
+#else
+constexpr uint8_t kI2cSda  = 2;
+constexpr uint8_t kI2cScl  = 1;
+#endif
+constexpr uint32_t kI2cFreq = 400000U;
 
 // DLight probe — M5Stack Unit DLight (BH1750FVI) on I2C
 constexpr uint8_t kDLightI2cAddr = 0x23;
