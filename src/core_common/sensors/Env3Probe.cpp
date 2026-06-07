@@ -3,7 +3,6 @@
 #include <Wire.h>
 
 #include <app_config.h>
-#include <ui/EnvSensorScreen.h>
 
 namespace {
 bool i2cPing(uint8_t addr) {
@@ -36,10 +35,4 @@ bool Env3Probe::sample(SensorReading& out) {
   out.hasHumidity    = true; out.humidityPct  = _sht3x.humidity;
   out.hasPressure    = true; out.pressurePa   = _qmp.pressure;
   return true;
-}
-
-void Env3Probe::feedScreens(const SensorReading& r) {
-  if (_screen) {
-    _screen->notifyNewReadings(r.temperatureC, r.humidityPct, r.pressurePa);
-  }
 }

@@ -3,7 +3,6 @@
 #include <Wire.h>
 
 #include <app_config.h>
-#include <ui/DLightScreen.h>
 
 namespace {
 bool i2cPing(uint8_t addr) {
@@ -63,20 +62,6 @@ bool DLightProbe::sample(SensorReading& out) {
   out.hasLux = true;
   out.lux = static_cast<float>(lux);
   return true;
-}
-
-void DLightProbe::feedScreens(const SensorReading& r) {
-  if (_screen && r.hasLux) {
-    _screen->notifyNewReadings(r.lux);
-  }
-}
-
-size_t DLightProbe::screenCount() const {
-  return _screen ? 1 : 0;
-}
-
-IScreen* DLightProbe::screen(size_t idx) const {
-  return (idx == 0 && _screen) ? _screen : nullptr;
 }
 
 void DLightProbe::shutdown() {
