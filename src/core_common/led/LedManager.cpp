@@ -1,15 +1,25 @@
 #include <led/LedManager.h>
 
 void LedManager::begin() {
-  FastLED.addLeds<WS2812, AppConfig::kM5Go3BottomLedPin, GRB>(
+  // Drive strip data pin LOW before FastLED registration.
+  // On ESP32-S3 the pin floats HIGH during boot which causes WS2812B
+  // first-LED green artifact. Force output LOW first.
+  pinMode(AppConfig::kRgbUnitLedPin, OUTPUT);
+  digitalWrite(AppConfig::kRgbUnitLedPin, LOW);
+
+  FastLED.addLeds<WS2812B, AppConfig::kM5Go3BottomLedPin, GRB>(
     _bottomLeds, AppConfig::kM5Go3BottomLedCount);
 
-  FastLED.addLeds<SK6812, AppConfig::kRgbUnitLedPin, GRB>(
+  FastLED.addLeds<WS2812B, AppConfig::kRgbUnitLedPin, GRB>(
     _rgbUnitLeds, AppConfig::kRgbUnitLedCount);
 
   FastLED.setBrightness(255);  // no-op; per-LED brightness via nscale8_video in _writeRgbUnit
   setOff();
-  setRgbUnitOff();
+  // Send black frame twice to ensure all LEDs are cleared on first boot.
+  fill_solid(_rgbUnitLeds, AppConfig::kRgbUnitLedCount, CRGB::Black);
+  FastLED.show();
+  delay(5);
+  FastLED.show();
 }
 
 void LedManager::service() {
@@ -126,8 +136,13 @@ void LedManager::endVerificationPattern() {
 }
 
 void LedManager::_writeRgbUnit(CRGB color, uint8_t brightness) {
+  if (brightness == 0) {
+    fill_solid(_rgbUnitLeds, AppConfig::kRgbUnitLedCount, CRGB::Black);
+    FastLED.show();
+    return;
+  }
   CRGB scaled = color;
-  scaled.nscale8_video(brightness);
+  scaled.nscale8(brightness);
   fill_solid(_rgbUnitLeds, AppConfig::kRgbUnitLedCount, scaled);
   FastLED.show();
 }

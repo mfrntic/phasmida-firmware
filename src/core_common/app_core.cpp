@@ -679,6 +679,10 @@ void appBegin(const AppUiHooks& hooks) {
   delay(120);
   Serial.println("[app_core] serial ready");
 
+  // Init LED manager immediately so strip data pin is driven LOW before WiFi.
+  // Prevents WS2812B first-LED green artifact from floating GPIO during boot.
+  g_ledMgr.begin();
+
   if (g_hooks.onBootStart) {
     g_hooks.onBootStart();
   }
@@ -781,7 +785,6 @@ void appBegin(const AppUiHooks& hooks) {
     bootLog(bootStep, "Skipping NTP sync (WiFi disconnected)");
   }
 
-  g_ledMgr.begin();
   bootLog(bootStep, "LED manager initialized");
 
   bootLog(bootStep, "Configuring MQTT client");
