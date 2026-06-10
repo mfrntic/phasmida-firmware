@@ -70,6 +70,7 @@ static bool publishCommandAck(const String& cmdId, const char* status,
   ack["cmdId"] = cmdId;
   ack["status"] = status;
   ack["ts"] = millis();  // Use millis() since timer_camera doesn't have TimeSync
+  ack["deviceType"] = CamConfig::kDeviceType;
 
   if (errorCode != nullptr) {
     ack["error"]["code"] = errorCode;
@@ -100,6 +101,7 @@ static bool publishCameraQualityEvent(const String& cmdId,
   event["apiVersion"] = 1;
   event["msgId"] = String(millis()) + "-" + String(static_cast<uint32_t>(esp_random()), HEX);
   event["macaddress"] = g_identity.macDisplay();
+  event["deviceType"] = CamConfig::kDeviceType;
   event["ts"] = millis();
   event["type"] = isFallback ? "camera-quality-fallback" : "camera-quality-applied";
   event["severity"] = isFallback ? "warning" : "info";
@@ -454,7 +456,7 @@ void loop() {
       mc.username          = g_identity.macSlug();
       mc.password          = CamConfig::kDeviceApiKey;
       mc.statusTopicForLwt = g_identity.statusTopic();
-      mc.willPayload       = "{\"state\":\"offline\",\"reason\":\"unexpected\"}";
+      mc.willPayload       = String("{\"state\":\"offline\",\"reason\":\"unexpected\",\"deviceType\":\"") + CamConfig::kDeviceType + "\"}";
       mc.keepAliveSec      = CamConfig::kMqttKeepAliveSec;
       mc.bufferSize        = 512;
       Serial.printf("[MQTT] broker=%s:%d  clientId=%s  username=%s\n",

@@ -26,7 +26,16 @@ constexpr uint8_t kMqttQos = 1;
 constexpr int kApiVersion = 1;
 
 // Compile-time credentials — username is MAC slug (runtime), password is API key.
+#if defined(PHASMIDA_TARGET_ATOMS3_LITE)
+constexpr const char* kCoreDeviceApiKey = PHASMIDA_ATOMS3_LITE_DEVICE_API_KEY;
+constexpr const char* kDeviceType = "atoms3_lite";
+#elif defined(PHASMIDA_TARGET_CORE_S3)
+constexpr const char* kCoreDeviceApiKey = PHASMIDA_CORE_S3_DEVICE_API_KEY;
+constexpr const char* kDeviceType = "core_s3";
+#else
 constexpr const char* kCoreDeviceApiKey = PHASMIDA_CORE_DEVICE_API_KEY;
+constexpr const char* kDeviceType = "core";
+#endif
 constexpr const char* kFwVersion = "1.0.0";
 
 // Bootstrap defaults used only when values are missing in NVS.
@@ -60,7 +69,7 @@ constexpr const char* kNvsLightLocalOverride = "light_lovr"; // bool: local OFF 
 constexpr uint8_t  kM5Go3BottomLedPin   = 35;
 constexpr uint8_t  kM5Go3BottomLedCount = 1;
 
-constexpr uint8_t  kRgbUnitLedPin       = 5;
+constexpr uint8_t  kRgbUnitLedPin       = 2;   // PORT.CUSTOM yellow wire → Atom S3 Lite G2
 constexpr uint8_t  kRgbUnitLedCount     = 60;
 
 constexpr uint8_t kSoilMoistureAnalogPin   = 8;
@@ -80,6 +89,7 @@ constexpr uint8_t  kRgbUnitLedCount     = 60;  // max addressed external chain l
 // Soil Moisture probe — M5Stack Unit Earth on CoreS3 PORT.B
 constexpr uint8_t kSoilMoistureAnalogPin   = 8;   // PORT.B AOUT (Analog Output, grey wire)
 constexpr uint8_t kSoilMoistureDigitalPin  = 9;   // PORT.B DOUT (Digital Output, threshold via trim-pot)
+
 #endif
 
 // I2C bus pins — board specific.
@@ -92,6 +102,7 @@ constexpr uint8_t kI2cScl  = 39;
 constexpr uint8_t kI2cSda  = 2;
 constexpr uint8_t kI2cScl  = 1;
 #endif
+
 constexpr uint32_t kI2cFreq = 400000U;
 
 // DLight probe — M5Stack Unit DLight (BH1750FVI) on I2C

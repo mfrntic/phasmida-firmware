@@ -285,7 +285,11 @@ bool publishCommandAck(const String& cmdId, const char* status,
   String payload;
   serializeJson(ack, payload);
   bool ok = g_mqtt.publish(g_identity.cmdAckTopic(), payload, false);
-  logf("CMD ACK publish: %s (cmdId=%s)", ok ? "ok" : "fail", cmdId.c_str());
+  logf("CMD ACK publish: %s (cmdId=%s status=%s error=%s)",
+       ok ? "ok" : "fail",
+       cmdId.c_str(),
+       status ? status : "",
+       errorCode ? errorCode : "-");
   return ok;
 }
 
@@ -332,6 +336,8 @@ void handleMqttCommand(const String& topicStr, const String& payloadStr) {
   String type     = cmd["type"]     | "";
   uint64_t issuedAt = cmd["issuedAt"] | 0ULL;
   uint32_t ttlMs  = cmd["ttlMs"]    | 0U;
+
+  logf("CMD recv: type=%s cmdId=%s", type.c_str(), cmdId.c_str());
 
   if (cmdId.isEmpty() || type.isEmpty() || issuedAt == 0 || ttlMs == 0) {
     logLine("CMD invalid: missing required fields");
@@ -434,6 +440,7 @@ void handleMqttCommand(const String& topicStr, const String& payloadStr) {
       publishCommandAck(cmdId, "rejected", "invalid_brightness", "brightness must be 0-255");
       return;
     }
+    logf("set-light apply: color=%s brightness=%d", colorStr, brightness);
     uint64_t appliedAt = g_timeSync.unixEpochMs();
     g_ledMgr.applySetLight(targetColor, static_cast<uint8_t>(brightness), cmdId);
     g_configStore.saveLightState(targetColor, static_cast<uint8_t>(brightness), cmdId);
@@ -466,6 +473,7 @@ void handleMqttCommand(const String& topicStr, const String& payloadStr) {
       publishCommandAck(cmdId, "rejected", "invalid_brightness", "brightness must be 0-255");
       return;
     }
+    logf("force-light-on apply: color=%s brightness=%d", colorStr, brightness);
     g_configStore.setLightLocalOverride(false);
     uint64_t appliedAt = g_timeSync.unixEpochMs();
     g_ledMgr.applySetLight(targetColor, static_cast<uint8_t>(brightness), cmdId);
@@ -663,7 +671,13 @@ void appBegin(const AppUiHooks& hooks) {
   M5.begin(cfg);
 
   Serial.begin(115200);
-  delay(300);
+  // Give USB CDC a brief window to attach so boot logs are visible in monitor.
+  uint32_t serialWaitStart = millis();
+  while (!Serial && (millis() - serialWaitStart) < 1500) {
+    delay(10);
+  }
+  delay(120);
+  Serial.println("[app_core] serial ready");
 
   if (g_hooks.onBootStart) {
     g_hooks.onBootStart();

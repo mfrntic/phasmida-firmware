@@ -119,6 +119,8 @@ Copy-Item include\secrets.example.h include\secrets.local.h
 #pragma once
 
 #define PHASMIDA_CORE_DEVICE_API_KEY "<core-device-api-key>"
+#define PHASMIDA_CORE_S3_DEVICE_API_KEY "<core-s3-device-api-key>"            // optional, falls back to PHASMIDA_CORE_DEVICE_API_KEY
+#define PHASMIDA_ATOMS3_LITE_DEVICE_API_KEY "<atoms3-lite-device-api-key>"    // optional, falls back to PHASMIDA_CORE_DEVICE_API_KEY
 
 #define PHASMIDA_CAM_DEVICE_API_KEY "<camera-device-api-key>"
 ```
@@ -191,6 +193,7 @@ Notes:
 
 - `include\secrets.local.h` is intentionally gitignored and machine-local.
 - Runtime values in NVS may override some defaults after device provisioning.
+- For manual hardcoding per core target, use `PHASMIDA_CORE_S3_DEVICE_API_KEY` and `PHASMIDA_ATOMS3_LITE_DEVICE_API_KEY`.
 
 ## MQTT and protocol
 

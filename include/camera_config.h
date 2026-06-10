@@ -18,6 +18,7 @@ constexpr const char* kProvisioningApPassword  = "phasmida123";
 
 // ── Device identity / backend ─────────────────────────────────────────────────
 constexpr const char* kDeviceApiKey = PHASMIDA_CAM_DEVICE_API_KEY;
+constexpr const char* kDeviceType   = "camera";
 constexpr const char* kWsBaseUrl    = "wss://api.phasmida.eu";
 
 // ── WebSocket heartbeat / reconnect (from spec-firmware-v1-3-camera-streaming)

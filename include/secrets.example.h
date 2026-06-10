@@ -13,6 +13,16 @@
 #define PHASMIDA_CORE_DEVICE_API_KEY ""
 #endif
 
+// Optional per-target hardcoded keys for core firmware variants.
+// If omitted, both targets fall back to PHASMIDA_CORE_DEVICE_API_KEY.
+#ifndef PHASMIDA_CORE_S3_DEVICE_API_KEY
+#define PHASMIDA_CORE_S3_DEVICE_API_KEY PHASMIDA_CORE_DEVICE_API_KEY
+#endif
+
+#ifndef PHASMIDA_ATOMS3_LITE_DEVICE_API_KEY
+#define PHASMIDA_ATOMS3_LITE_DEVICE_API_KEY PHASMIDA_CORE_DEVICE_API_KEY
+#endif
+
 #ifndef PHASMIDA_CAM_DEVICE_API_KEY
 #define PHASMIDA_CAM_DEVICE_API_KEY ""
 #endif

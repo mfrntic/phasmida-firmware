@@ -201,7 +201,9 @@ Command envelope example:
 Envelope notes:
 
 - `cmdId` and `type` are required
-- `core_s3`: `issuedAt` and `ttlMs` are required and expiration is enforced
+- `core_s3` and `atoms3_lite`: `issuedAt` and `ttlMs` enable expiry enforcement when both are present
+- manual/test publishes may omit both `issuedAt` and `ttlMs`; firmware accepts them as non-expiring commands
+- sending only one of `issuedAt` / `ttlMs`, or sending zero values, is rejected with `invalid_timing`
 - `timer_camera_f`: `issuedAt`/`ttlMs` are currently not enforced
 
 ### Implemented commands by target
