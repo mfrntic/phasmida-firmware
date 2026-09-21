@@ -20,7 +20,18 @@ SoilMoistureProbe::SoilMoistureProbe(SoilMoistureScreen* screen)
       _analogPin(AppConfig::kSoilMoistureAnalogPin),
       _digitalPin(AppConfig::kSoilMoistureDigitalPin),
       _lastRawValue(0),
-      _isInitialized(false) {}
+      _isInitialized(false),
+      _dryMv(AppConfig::kSoilMoistureDryMv),
+      _wetMv(AppConfig::kSoilMoistureWetMv) {}
+
+void SoilMoistureProbe::setCalibration(uint16_t dryMv, uint16_t wetMv) {
+  _dryMv = dryMv;
+  _wetMv = wetMv;
+}
+
+uint16_t SoilMoistureProbe::readMilliVolts() const {
+  return static_cast<uint16_t>(analogReadMilliVolts(_analogPin));
+}
 
 const char* SoilMoistureProbe::name() const {
   return "SOIL";
@@ -79,19 +90,20 @@ bool SoilMoistureProbe::sample(SensorReading& out) {
 
   // Convert to percentage. The probe is resistive with a pull-up, so a high
   // voltage means DRY and a low voltage means WET — invert and scale between
-  // the calibration points (see app_config.h), clamped to 0–100 %.
+  // the calibration points (defaults in app_config.h, per-pot values via
+  // setCalibration), clamped to 0–100 %.
   // analogReadMilliVolts() applies the eFuse ADC calibration, which keeps the
   // numbers comparable to M5Stack's own driver and linearises the ADC ends.
-  uint32_t mv = analogReadMilliVolts(_analogPin);
-  constexpr float kDry = AppConfig::kSoilMoistureDryMv;
-  constexpr float kWet = AppConfig::kSoilMoistureWetMv;
-  float moisturePercent = (kDry - mv) / (kDry - kWet) * 100.0f;
+  uint16_t mv = readMilliVolts();
+  const float dry = _dryMv;
+  const float wet = _wetMv;
+  float moisturePercent = (dry - mv) / (dry - wet) * 100.0f;
   moisturePercent = constrain(moisturePercent, 0.0f, 100.0f);
 
   out = SensorReading{};
   out.hasSoilMoisture  = true;
   out.soilMoistureRaw  = raw;
-  out.soilMoistureMv   = static_cast<uint16_t>(mv);
+  out.soilMoistureMv   = mv;
   out.soilMoisturePct  = moisturePercent;
   out.soilMoistureDry  = isDry;
 

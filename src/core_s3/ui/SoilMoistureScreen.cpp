@@ -10,9 +10,23 @@ SoilMoistureScreen::SoilMoistureScreen() {
   _cardMoisture.setNoBorder();
 }
 
-void SoilMoistureScreen::notifyNewReadings(float moisturePct) {
+void SoilMoistureScreen::notifyNewReadings(float moisturePct, uint16_t milliVolts) {
   _cardMoisture.setValue(moisturePct);
+  if (_milliVolts != milliVolts || !_hasMilliVolts) {
+    _milliVolts    = milliVolts;
+    _hasMilliVolts = true;
+    _infoDirty     = true;
+  }
   if (_active) draw();
+}
+
+void SoilMoistureScreen::setCalibrationInfo(uint16_t dryMv, uint16_t wetMv) {
+  if (_dryMv != dryMv || _wetMv != wetMv) {
+    _dryMv = dryMv;
+    _wetMv = wetMv;
+    _infoDirty = true;
+    if (_active) draw();
+  }
 }
 
 void SoilMoistureScreen::setNavInfo(int myIdx, int total) {
@@ -26,11 +40,14 @@ void SoilMoistureScreen::setNavInfo(int myIdx, int total) {
 void SoilMoistureScreen::onEnter() {
   _active = true;
   _needsFullClear = true;
+  _armed = Armed::None;
+  _feedback[0] = '\0';
   draw();
 }
 
 void SoilMoistureScreen::onExit() {
   _active = false;
+  _armed = Armed::None;
 }
 
 void SoilMoistureScreen::draw() {
@@ -47,13 +64,112 @@ void SoilMoistureScreen::drawIntoSprite(LGFX_Sprite& sp) {
 
 void SoilMoistureScreen::onUpdate() {
   if (!_active) return;
-  if (millis() - _lastDrawMs >= kDrawIntervalMs) {
+  uint32_t now = millis();
+
+  // Disarm a button that was tapped once and then left alone.
+  if (_armed != Armed::None && now - _armedAtMs > kArmTimeoutMs) {
+    _armed = Armed::None;
+    _buttonsDirty = true;
+  }
+  // Drop the result banner back to the info line.
+  if (_feedback[0] != '\0' && now - _feedbackAtMs > kFeedbackTimeoutMs) {
+    _feedback[0] = '\0';
+    _infoDirty = true;
+  }
+
+  if (_infoDirty || _buttonsDirty || now - _lastDrawMs >= kDrawIntervalMs) {
     draw();
   }
 }
 
+void SoilMoistureScreen::onVerticalTouch(int32_t x, int32_t y) {
+  if (y < kBtnY1 || y > kBtnY2) return;
+  if (x >= kDryBtnX && x < kDryBtnX + kBtnW) {
+    _onButtonTap(Armed::Dry);
+  } else if (x >= kWetBtnX && x < kWetBtnX + kBtnW) {
+    _onButtonTap(Armed::Wet);
+  }
+}
+
 void SoilMoistureScreen::onBtnB() {
-  // Reserved for future use
+  // Physical middle button confirms an armed capture (same as a second tap).
+  if (_armed != Armed::None) _onButtonTap(_armed);
+}
+
+void SoilMoistureScreen::_onButtonTap(Armed which) {
+  uint32_t now = millis();
+
+  // First tap arms, second tap on the same button (within the window) fires.
+  if (_armed != which) {
+    _armed = which;
+    _armedAtMs = now;
+    _buttonsDirty = true;
+    draw();
+    return;
+  }
+  _armed = Armed::None;
+  _buttonsDirty = true;
+
+  const bool wet = (which == Armed::Wet);
+  bool ok = _calibrate ? _calibrate(wet) : false;
+  if (ok) {
+    snprintf(_feedback, sizeof(_feedback), "%s point saved: %u mV",
+             wet ? "WET" : "DRY", static_cast<unsigned>(_milliVolts));
+  } else {
+    snprintf(_feedback, sizeof(_feedback), "%s point rejected", wet ? "WET" : "DRY");
+  }
+  _feedbackOk = ok;
+  _feedbackAtMs = now;
+  _infoDirty = true;
+  draw();
+}
+
+template<typename GFX>
+void SoilMoistureScreen::_renderInfo(GFX& gfx) {
+  gfx.fillRect(kContentX, kInfoY, kContentW, kInfoH, TFT_BLACK);
+  gfx.setFont(&lgfx::fonts::DejaVu9);
+  gfx.setTextSize(1);
+  gfx.setTextDatum(textdatum_t::middle_center);
+
+  char line[64];
+  if (_feedback[0] != '\0') {
+    gfx.setTextColor(_feedbackOk ? TFT_GREEN : TFT_RED, TFT_BLACK);
+    strlcpy(line, _feedback, sizeof(line));
+  } else {
+    gfx.setTextColor(0xC618U /* light grey */, TFT_BLACK);
+    if (_hasMilliVolts) {
+      snprintf(line, sizeof(line), "%u mV   |   dry %u  /  wet %u",
+               static_cast<unsigned>(_milliVolts),
+               static_cast<unsigned>(_dryMv), static_cast<unsigned>(_wetMv));
+    } else {
+      snprintf(line, sizeof(line), "--- mV   |   dry %u  /  wet %u",
+               static_cast<unsigned>(_dryMv), static_cast<unsigned>(_wetMv));
+    }
+  }
+  gfx.drawString(line, kContentX + kContentW / 2, kInfoY + kInfoH / 2);
+  _infoDirty = false;
+}
+
+template<typename GFX>
+void SoilMoistureScreen::_renderButtons(GFX& gfx) {
+  // Same visual language as RgbLightScreen: dark idle, accent when armed.
+  struct Btn { int16_t x; Armed id; const char* idle; uint16_t accentBg; uint16_t accentBdr; };
+  const Btn buttons[] = {
+    { kDryBtnX, Armed::Dry, "SET DRY", 0x8200U /* dark orange */, 0xFD20U /* orange */ },
+    { kWetBtnX, Armed::Wet, "SET WET", 0x0318U /* dark cyan */,   0x07FFU /* cyan */ },
+  };
+
+  gfx.setFont(&lgfx::fonts::FreeSans9pt7b);
+  gfx.setTextSize(1);
+  gfx.setTextDatum(textdatum_t::middle_center);
+  for (const Btn& b : buttons) {
+    bool armed = (_armed == b.id);
+    gfx.fillRoundRect(b.x, kBtnY1, kBtnW, kBtnY2 - kBtnY1, 8, armed ? b.accentBg : 0x2104U);
+    gfx.drawRoundRect(b.x, kBtnY1, kBtnW, kBtnY2 - kBtnY1, 8, armed ? b.accentBdr : 0x4208U);
+    gfx.setTextColor(TFT_WHITE, TFT_BLACK);
+    gfx.drawString(armed ? "TAP AGAIN" : b.idle, b.x + kBtnW / 2, (kBtnY1 + kBtnY2) / 2);
+  }
+  _buttonsDirty = false;
 }
 
 template<typename GFX>
@@ -102,6 +218,10 @@ void SoilMoistureScreen::_render(GFX& gfx, bool /*forceFull*/) {
   if (didFullClear || _cardMoisture.isDirty()) {
     _cardMoisture.render(gfx);
   }
+
+  // ---- Info line + calibration buttons ----
+  if (didFullClear || _infoDirty)    _renderInfo(gfx);
+  if (didFullClear || _buttonsDirty) _renderButtons(gfx);
 
   // ---- Carousel dots (only on full clear) ----
   if (didFullClear) {

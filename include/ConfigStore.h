@@ -10,7 +10,15 @@ struct RuntimeConfig {
   String   mqttHost;
   uint16_t mqttPort;
   uint32_t telemetryIntervalMs;
+  uint16_t soilDryMv;   // AOUT level mapped to 0 % (bone-dry soil)
+  uint16_t soilWetMv;   // AOUT level mapped to 100 % (freshly watered soil)
 };
+
+// Valid soil calibration: both points on the 3.3 V rail, wet strictly below
+// dry (AOUT falls as conductivity rises).
+inline bool isValidSoilCalibration(uint16_t dryMv, uint16_t wetMv, uint16_t maxMv) {
+  return wetMv > 0 && wetMv < dryMv && dryMv <= maxMv;
+}
 
 struct PersistedLightState {
   bool     valid      = false;
@@ -27,6 +35,8 @@ public:
   RuntimeConfig load();                            // čitaj sve; uvijek vraća valjanu config
 
   void setTelemetryInterval(uint32_t ms);
+  void setSoilCalibration(uint16_t dryMv, uint16_t wetMv);
+  void clearSoilCalibration();                           // back to compile-time defaults
   void setWifi(const String& ssid, const String& pass);
   void setMqttBroker(const String& host, uint16_t port);
   void setTimezone(const String& posixTz);

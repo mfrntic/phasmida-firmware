@@ -334,6 +334,47 @@ static bool publishRgbVerificationResult(
   return ok;
 }
 
+// Soil calibration lives in three places that must stay in sync: the probe
+// (used by sample()), g_runtimeCfg (reported back) and NVS (survives reboot).
+void applySoilCalibration(uint16_t dryMv, uint16_t wetMv, bool persist) {
+  g_soilMoistureProbe.setCalibration(dryMv, wetMv);
+  g_soilMoistureScreen.setCalibrationInfo(dryMv, wetMv);
+  g_runtimeCfg.soilDryMv = dryMv;
+  g_runtimeCfg.soilWetMv = wetMv;
+  if (persist) {
+    g_configStore.setSoilCalibration(dryMv, wetMv);
+  }
+  logf("Soil calibration: dry=%u mV -> 0 %%, wet=%u mV -> 100 %%",
+       static_cast<unsigned>(dryMv), static_cast<unsigned>(wetMv));
+}
+
+bool isSoilProbePresent() {
+  for (size_t i = 0; i < g_probes.probeCount(); ++i) {
+    if (g_probes.probeAt(i) == &g_soilMoistureProbe) return g_probes.isPresent(i);
+  }
+  return false;
+}
+
+// Capture the live AOUT level as the wet or dry point. Shared by the
+// `calibrate-soil` MQTT command and the on-screen SET DRY / SET WET buttons.
+// On rejection `error` names the reason (static string) and nothing changes.
+bool captureSoilCalibrationPoint(bool wet, uint16_t& capturedMv, const char*& error) {
+  if (!isSoilProbePresent()) {
+    error = "probe_not_present";
+    return false;
+  }
+  capturedMv     = g_soilMoistureProbe.readMilliVolts();
+  uint16_t dryMv = wet ? g_soilMoistureProbe.dryMv() : capturedMv;
+  uint16_t wetMv = wet ? capturedMv : g_soilMoistureProbe.wetMv();
+  if (!isValidSoilCalibration(dryMv, wetMv, AppConfig::kSoilMoistureMaxMv)) {
+    error = "invalid_soil_calibration";
+    return false;
+  }
+  applySoilCalibration(dryMv, wetMv, true);
+  error = nullptr;
+  return true;
+}
+
 void handleMqttCommand(const String& topicStr, const String& payloadStr) {
   if (topicStr != g_identity.cmdTopic()) {
     logf("MQTT msg ignored on %s", topicStr.c_str());
@@ -388,14 +429,69 @@ void handleMqttCommand(const String& topicStr, const String& payloadStr) {
   }
 
   if (type == "set-config") {
+    // Soil points are optional and merged with the current pair; validate the
+    // merged pair before touching anything so a bad request changes nothing.
+    uint16_t soilDryMv = cmd["params"]["soilDryMv"] | g_soilMoistureProbe.dryMv();
+    uint16_t soilWetMv = cmd["params"]["soilWetMv"] | g_soilMoistureProbe.wetMv();
+    if (!isValidSoilCalibration(soilDryMv, soilWetMv, AppConfig::kSoilMoistureMaxMv)) {
+      publishCommandAck(cmdId, "rejected", "invalid_soil_calibration",
+                        "soilWetMv must be > 0 and < soilDryMv <= 3300");
+      return;
+    }
+
     uint32_t requestedInterval = cmd["params"]["telemetryIntervalMs"] | g_telemetryIntervalMs;
     g_telemetryIntervalMs = max(requestedInterval, AppConfig::kMinTelemetryIntervalMs);
     g_runtimeCfg.telemetryIntervalMs = g_telemetryIntervalMs;  // keep in sync
     g_configStore.setTelemetryInterval(g_telemetryIntervalMs);
     g_nextTelemetryAt = millis() + g_telemetryIntervalMs;
     g_probes.setSampleIntervalMs(g_telemetryIntervalMs);
-    char resultJson[48];
-    snprintf(resultJson, sizeof(resultJson), "{\"telemetryIntervalMs\":%lu}", (unsigned long)g_telemetryIntervalMs);
+    if (soilDryMv != g_soilMoistureProbe.dryMv() || soilWetMv != g_soilMoistureProbe.wetMv()) {
+      applySoilCalibration(soilDryMv, soilWetMv, true);
+    }
+    char resultJson[96];
+    snprintf(resultJson, sizeof(resultJson),
+             "{\"telemetryIntervalMs\":%lu,\"soilDryMv\":%u,\"soilWetMv\":%u}",
+             (unsigned long)g_telemetryIntervalMs,
+             static_cast<unsigned>(soilDryMv), static_cast<unsigned>(soilWetMv));
+    publishCommandAck(cmdId, "ok", nullptr, nullptr, resultJson);
+    return;
+  }
+
+  if (type == "calibrate-soil") {
+    // Capture the live AOUT level as one calibration point, in place:
+    //   {"point":"wet"}   right after a thorough watering  -> 100 %
+    //   {"point":"dry"}   when the pot is bone dry          -> 0 %
+    //   {"point":"reset"} back to the compile-time (water-based) defaults
+    String point = cmd["params"]["point"] | "";
+    if (point == "reset") {
+      g_configStore.clearSoilCalibration();
+      applySoilCalibration(AppConfig::kSoilMoistureDryMv, AppConfig::kSoilMoistureWetMv, false);
+    } else if (point == "dry" || point == "wet") {
+      uint16_t mv = 0;
+      const char* error = nullptr;
+      if (!captureSoilCalibrationPoint(point == "wet", mv, error)) {
+        char msg[96];
+        if (strcmp(error, "probe_not_present") == 0) {
+          strlcpy(msg, "Soil probe is not connected", sizeof(msg));
+        } else {
+          snprintf(msg, sizeof(msg), "Captured %u mV would put the wet point at/above the dry point (dry %u / wet %u)",
+                   static_cast<unsigned>(mv),
+                   static_cast<unsigned>(g_soilMoistureProbe.dryMv()),
+                   static_cast<unsigned>(g_soilMoistureProbe.wetMv()));
+        }
+        publishCommandAck(cmdId, "rejected", error, msg);
+        return;
+      }
+    } else {
+      publishCommandAck(cmdId, "rejected", "invalid_point", "params.point must be \"dry\", \"wet\" or \"reset\"");
+      return;
+    }
+    char resultJson[96];
+    snprintf(resultJson, sizeof(resultJson),
+             "{\"point\":\"%s\",\"soilDryMv\":%u,\"soilWetMv\":%u}",
+             point.c_str(),
+             static_cast<unsigned>(g_soilMoistureProbe.dryMv()),
+             static_cast<unsigned>(g_soilMoistureProbe.wetMv()));
     publishCommandAck(cmdId, "ok", nullptr, nullptr, resultJson);
     return;
   }
@@ -738,6 +834,7 @@ void setup() {
 
   g_runtimeCfg = g_configStore.load();
   g_telemetryIntervalMs = g_runtimeCfg.telemetryIntervalMs;
+  applySoilCalibration(g_runtimeCfg.soilDryMv, g_runtimeCfg.soilWetMv, false);
   String persistedTimezone = g_configStore.loadTimezone();
   if (!persistedTimezone.isEmpty()) {
     if (g_timeSync.applyTimezone(persistedTimezone)) {
@@ -763,6 +860,16 @@ void setup() {
   // Settings screen is always present and serves as the anchor before which
   // probe screens are inserted as they are detected.
   g_screenMgr.addScreen(&g_settingsScreen);
+
+  // On-device soil calibration: SET DRY / SET WET buttons on the SOIL screen
+  // capture the live level exactly like the `calibrate-soil` command.
+  g_soilMoistureScreen.setCalibrateCallback([](bool wet) {
+    uint16_t mv = 0;
+    const char* error = nullptr;
+    bool ok = captureSoilCalibrationPoint(wet, mv, error);
+    if (!ok) logf("Soil calibration via screen rejected: %s", error);
+    return ok;
+  });
 
     logBootStep(bootStep, "Registering sensor probes");
     g_probes.attachUi(&g_screenMgr, &g_settingsScreen);

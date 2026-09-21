@@ -3,7 +3,7 @@
 
 void SoilMoistureProbe::feedScreens(const SensorReading& r) {
   if (_screen && r.hasSoilMoisture) {
-    _screen->notifyNewReadings(r.soilMoisturePct);
+    _screen->notifyNewReadings(r.soilMoisturePct, r.soilMoistureMv);
   }
 }
 

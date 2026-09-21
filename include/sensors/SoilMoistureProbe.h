@@ -26,10 +26,22 @@ class SoilMoistureProbe : public ISensorProbe {
   void service() override {}
   void shutdown() override {}
 
+  // Per-pot calibration: AOUT level (mV) mapped to 0 % and to 100 %.
+  // Defaults come from app_config.h; runtime values are loaded from NVS.
+  void     setCalibration(uint16_t dryMv, uint16_t wetMv);
+  uint16_t dryMv() const { return _dryMv; }
+  uint16_t wetMv() const { return _wetMv; }
+
+  // Fresh eFuse-calibrated AOUT reading, for capturing a calibration point
+  // on demand (independent of the sampling cadence).
+  uint16_t readMilliVolts() const;
+
  private:
   SoilMoistureScreen* _screen;
   uint8_t  _analogPin;
   uint8_t  _digitalPin;
   uint16_t _lastRawValue;
   bool     _isInitialized;
+  uint16_t _dryMv;
+  uint16_t _wetMv;
 };

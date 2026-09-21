@@ -44,11 +44,19 @@ RuntimeConfig ConfigStore::load() {
   cfg.mqttHost             = _prefs.getString(AppConfig::kNvsMqttHost,           AppConfig::kDefaultMqttHost);
   cfg.mqttPort             = _prefs.getUShort(AppConfig::kNvsMqttPort,           AppConfig::kMqttDefaultPort);
   cfg.telemetryIntervalMs  = _prefs.getUInt(  AppConfig::kNvsTelemetryInterval,  AppConfig::kTelemetryIntervalMs);
+  cfg.soilDryMv            = _prefs.getUShort(AppConfig::kNvsSoilDryMv,          AppConfig::kSoilMoistureDryMv);
+  cfg.soilWetMv            = _prefs.getUShort(AppConfig::kNvsSoilWetMv,          AppConfig::kSoilMoistureWetMv);
 
   if (cfg.mqttHost.isEmpty())     cfg.mqttHost     = AppConfig::kDefaultMqttHost;
   if (cfg.mqttPort == 0)          cfg.mqttPort     = AppConfig::kMqttDefaultPort;
 
   cfg.telemetryIntervalMs = max(cfg.telemetryIntervalMs, AppConfig::kMinTelemetryIntervalMs);
+
+  // Never hand out an unusable pair (e.g. partially written NVS).
+  if (!isValidSoilCalibration(cfg.soilDryMv, cfg.soilWetMv, AppConfig::kSoilMoistureMaxMv)) {
+    cfg.soilDryMv = AppConfig::kSoilMoistureDryMv;
+    cfg.soilWetMv = AppConfig::kSoilMoistureWetMv;
+  }
 
   return cfg;
 }
@@ -56,6 +64,20 @@ RuntimeConfig ConfigStore::load() {
 void ConfigStore::setTelemetryInterval(uint32_t ms) {
   if (_open) {
     _prefs.putUInt(AppConfig::kNvsTelemetryInterval, ms);
+  }
+}
+
+void ConfigStore::setSoilCalibration(uint16_t dryMv, uint16_t wetMv) {
+  if (_open) {
+    _prefs.putUShort(AppConfig::kNvsSoilDryMv, dryMv);
+    _prefs.putUShort(AppConfig::kNvsSoilWetMv, wetMv);
+  }
+}
+
+void ConfigStore::clearSoilCalibration() {
+  if (_open) {
+    _prefs.remove(AppConfig::kNvsSoilDryMv);
+    _prefs.remove(AppConfig::kNvsSoilWetMv);
   }
 }
 

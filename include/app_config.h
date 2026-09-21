@@ -53,6 +53,8 @@ constexpr const char* kNvsMqttHost = "mqtt_host";
 constexpr const char* kNvsMqttPort = "mqtt_port";
 constexpr const char* kNvsTelemetryInterval = "tlm_int_ms";
 constexpr const char* kNvsTimezone = "timezone";
+constexpr const char* kNvsSoilDryMv = "soil_dry_mv";   // uint16_t, per-pot calibration
+constexpr const char* kNvsSoilWetMv = "soil_wet_mv";   // uint16_t, per-pot calibration
 
 // Persisted RGB set-light state (survives reboot)
 constexpr const char* kNvsLightColor      = "light_color";  // uint32_t packed RGB
@@ -102,8 +104,13 @@ constexpr uint8_t kSoilMoistureDigitalPin  = 9;   // PORT.B DOUT (Digital Output
 //   2900 mV = probe just touching the water surface  -> 0 %
 //   1630 mV = probe fully immersed                   -> 100 %
 // M5 notes the response is not linear across the range.
-constexpr uint16_t kSoilMoistureDryMv = 2900;
-constexpr uint16_t kSoilMoistureWetMv = 1630;
+// These are only the fallback: wet potting soil is more conductive than tap
+// water (fertiliser/mineral ions) and reads BELOW 1630 mV, so a real pot
+// needs its own points. They live in NVS (kNvsSoilDryMv/kNvsSoilWetMv) and are
+// set at runtime via `set-config` or captured in place via `calibrate-soil`.
+constexpr uint16_t kSoilMoistureDryMv  = 2900;
+constexpr uint16_t kSoilMoistureWetMv  = 1630;
+constexpr uint16_t kSoilMoistureMaxMv  = 3300;  // AOUT rail; upper bound for any calibration point
 
 // I2C bus pins — board specific.
 // CoreS3 PORT.A (Grove): SDA=2, SCL=1.

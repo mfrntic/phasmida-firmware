@@ -213,6 +213,7 @@ Envelope notes:
 | `request-telemetry` | yes | no |
 | `reboot` | yes | no |
 | `set-config` | yes | no |
+| `calibrate-soil` | yes | no |
 | `set-timezone` | yes | no |
 | `set-led` | yes | no |
 | `set-light` | yes | no |
@@ -223,6 +224,32 @@ Envelope notes:
 | `stream-start` | no | yes |
 | `set-camera-quality` | no | yes |
 | `set-camera-orientation` | no | yes |
+
+### `set-config`
+
+All params optional; omitted values keep their current setting. Persisted in NVS.
+
+| Param | Type | Notes |
+|-------|------|-------|
+| `telemetryIntervalMs` | uint32 | clamped to >= 5000; probe sampling follows it (capped at 30 s) |
+| `soilDryMv` | uint16 | Unit Earth AOUT level mapped to 0 % (bone-dry soil) |
+| `soilWetMv` | uint16 | Unit Earth AOUT level mapped to 100 % (freshly watered soil) |
+
+Soil pair must satisfy `0 < soilWetMv < soilDryMv <= 3300`, otherwise `rejected` / `invalid_soil_calibration` and nothing changes. Defaults (M5 water-based): dry 2900, wet 1630. Ack `result`: `{ "telemetryIntervalMs", "soilDryMv", "soilWetMv" }`.
+
+### `calibrate-soil`
+
+Captures the live Unit Earth AOUT level as one calibration point, in place — no need to know the mV value. Persisted in NVS.
+
+| `params.point` | Meaning |
+|----------------|---------|
+| `"wet"` | current level becomes 100 % — send right after a thorough watering, once the reading has settled (~2 min) |
+| `"dry"` | current level becomes 0 % — send when the pot is bone dry |
+| `"reset"` | back to the compile-time defaults (2900 / 1630 mV) |
+
+Rejections: `invalid_point`, `probe_not_present`, `invalid_soil_calibration` (captured point would put wet at/above dry). Ack `result`: `{ "point", "soilDryMv", "soilWetMv" }`.
+
+The `soil-moisture` telemetry reports `soilMoisture` (percent, relative to these two points, clamped 0–100), `soilMoistureRaw` and `soilMoistureDry` (trim-pot comparator). The percent is a conductivity index for that pot, not volumetric water content.
 
 Unknown command handling:
 
