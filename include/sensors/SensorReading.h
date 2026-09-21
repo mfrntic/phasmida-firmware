@@ -36,7 +36,8 @@ struct SensorReading {
   // Soil (Earth Unit)
   bool     hasSoilMoisture    = false;
   uint16_t soilMoistureRaw    = 0;      // raw ADC 0–4095
-  float    soilMoisturePct    = 0.0f;   // linear 0–100 %
+  uint16_t soilMoistureMv     = 0;      // calibrated AOUT voltage (mV)
+  float    soilMoisturePct    = 0.0f;   // 0 % = dry, 100 % = wet (calibrated, clamped)
   bool     soilMoistureDry    = false;  // DOUT: true = dry (above trim-pot threshold)
 
   // Light (Light/LUX Unit, planned)

@@ -83,7 +83,7 @@ void ProbeRegistry::service() {
     }
   }
   _nextSampleAt = now + (anyMissingFirstReading ? kWarmupSampleIntervalMs
-                                                : kSampleIntervalMs);
+                                                : _sampleIntervalMs);
 
   for (size_t i = 0; i < _count; ++i) {
     Slot& s = _slots[i];
@@ -116,6 +116,16 @@ void ProbeRegistry::service() {
         s.nextReinitAt = now + kReinitBackoffMs;
       }
     }
+  }
+}
+
+void ProbeRegistry::setSampleIntervalMs(uint32_t ms) {
+  _sampleIntervalMs = constrain(ms, kWarmupSampleIntervalMs, kMaxSampleIntervalMs);
+  // Apply the new cadence right away instead of finishing the old (possibly
+  // longer) wait; never postpone a sample that is already due.
+  uint32_t soonest = millis() + _sampleIntervalMs;
+  if (static_cast<int32_t>(_nextSampleAt - soonest) > 0) {
+    _nextSampleAt = soonest;
   }
 }
 

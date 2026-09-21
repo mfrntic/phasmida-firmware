@@ -52,6 +52,13 @@ class ProbeRegistry {
   // boot warm-up to let slow probes (e.g. BSEC) populate screens ASAP.
   void forceSampleNow() { _nextSampleAt = 0; service(); }
 
+  // Steady-state sampling cadence. Callers pass the telemetry interval so a
+  // publish never re-sends a stale reading; the value is clamped to
+  // [kWarmupSampleIntervalMs, kMaxSampleIntervalMs] so screens keep updating
+  // and lastReading() stays fresh even with long telemetry intervals.
+  void     setSampleIntervalMs(uint32_t ms);
+  uint32_t sampleIntervalMs() const { return _sampleIntervalMs; }
+
   // Optional callbacks (invoked from service() context only).
   void onSample(SampleCallback cb) { _sampleCb = std::move(cb); }
   void onPresenceChange(PresenceCallback cb) { _presenceCb = std::move(cb); }
@@ -69,7 +76,9 @@ class ProbeRegistry {
 
  private:
   static constexpr size_t   kMaxProbes              = 8;
-  static constexpr uint32_t kSampleIntervalMs       = 30000;
+  // Default and upper bound for the steady-state cadence (see
+  // setSampleIntervalMs). Must stay below lastReading()'s default maxAgeMs.
+  static constexpr uint32_t kMaxSampleIntervalMs    = 30000;
   // While any present probe still hasn't produced its first reading, sample
   // much more often so screens populate quickly after boot. Drops to the
   // steady-state cadence above as soon as every present probe has data.
@@ -101,8 +110,9 @@ class ProbeRegistry {
   int  _getProbeScreenPriority(ISensorProbe* probe) const;
 
   Slot     _slots[kMaxProbes];
-  size_t   _count        = 0;
-  uint32_t _nextSampleAt = 0;
+  size_t   _count            = 0;
+  uint32_t _nextSampleAt     = 0;
+  uint32_t _sampleIntervalMs = kMaxSampleIntervalMs;
 
   ScreenManager* _ui       = nullptr;
   IScreen*       _uiAnchor = nullptr;

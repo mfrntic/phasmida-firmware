@@ -1,6 +1,19 @@
 #include <sensors/SoilMoistureProbe.h>
 #include <app_config.h>
 #include <Arduino.h>
+#include <driver/adc.h>
+#include <driver/gpio.h>
+#include <soc/soc_caps.h>
+
+namespace {
+
+// Presence check: with the internal pull-down enabled an unplugged Grove
+// cable reads ~0, while a plugged Unit Earth reads well above this even with
+// the probe in water (its on-board 10k pull-up vs. our ~45k pull-down gives
+// >= ~1.4 V, raw >= ~1800). 200 raw ≈ 150 mV leaves a wide margin both ways.
+constexpr int kPresenceRawThreshold = 200;
+
+}  // namespace
 
 SoilMoistureProbe::SoilMoistureProbe(SoilMoistureScreen* screen)
     : _screen(screen),
@@ -18,19 +31,33 @@ const char* SoilMoistureProbe::telemetryType() const {
 }
 
 bool SoilMoistureProbe::detect() {
-  // Ensure pull-down is active before reading — detect() is called before
-  // init() by ProbeRegistry, so we must configure the pin here.
-  // With INPUT_PULLDOWN, a disconnected pin is pulled to 0V and reads near 0.
-  // A connected sensor always drives the line above ~200 raw.
-  pinMode(_analogPin, INPUT_PULLDOWN);
-  uint16_t raw = analogRead(_analogPin);
-  return raw > 200;
+  // A disconnected AOUT floats, so presence needs a defined idle level. The
+  // obvious pinMode(INPUT_PULLDOWN) does not survive: arduino-esp32 2.x
+  // analogRead()/analogReadMilliVolts() call pinMode(pin, ANALOG) on every
+  // read, which clears the pull. And the pull must NOT be active during the
+  // real measurement anyway — ~45k to GND in parallel with the probe would
+  // drag the dry level from 3.3 V to ~2.7 V and break the mV calibration.
+  //
+  // So: take a dedicated presence sample with the pull-down enabled, reading
+  // the ADC through the IDF driver (which leaves the pad config alone), then
+  // release the pull-down so the next sample() sees the bare probe.
+  analogRead(_analogPin);  // ensure ADC unit, attenuation and pad are set up
+  int8_t channel = digitalPinToAnalogChannel(_analogPin);
+  if (channel < 0 || channel >= SOC_ADC_MAX_CHANNEL_NUM) {
+    // Not an ADC1 pin — no pull-down trick available, fall back to raw level.
+    return analogRead(_analogPin) > kPresenceRawThreshold;
+  }
+  gpio_num_t gpio = static_cast<gpio_num_t>(_analogPin);
+  gpio_pulldown_en(gpio);
+  delayMicroseconds(200);  // let the pad settle against the pull-down
+  int raw = adc1_get_raw(static_cast<adc1_channel_t>(channel));
+  gpio_pulldown_dis(gpio);
+  return raw > kPresenceRawThreshold;
 }
 
 bool SoilMoistureProbe::init() {
-  // pinMode already set to INPUT_PULLDOWN in detect(); repeated here for
-  // clarity and in case init() is ever called independently.
-  pinMode(_analogPin, INPUT_PULLDOWN);
+  // No pull on the analog pin — see detect(). DOUT is driven by the unit's
+  // LM393 with an on-board 10k pull-up, so a plain input is enough.
   pinMode(_digitalPin, INPUT);
   _isInitialized = true;
   return true;
@@ -44,22 +71,27 @@ bool SoilMoistureProbe::sample(SensorReading& out) {
   uint16_t raw = analogRead(_analogPin);
   _lastRawValue = raw;
 
-  // Threshold consistent with detect(): below 200 means pin is floating
-  // (probe disconnected) — signal a missing sample so ProbeRegistry can
-  // count it toward hot-unplug confirmation.
-  if (raw <= 200) {
-    return false;
-  }
+  // No disconnect heuristic here: without a pull the floating input can read
+  // anything. Hot-unplug is detected by ProbeRegistry via detect() instead.
 
   // Digital threshold output (HIGH = dry, i.e. above trim-pot threshold)
   bool isDry = digitalRead(_digitalPin) == HIGH;
 
-  // Convert to percentage: linear mapping from 0-4095 → 0-100%
-  float moisturePercent = (raw / 4095.0f) * 100.0f;
+  // Convert to percentage. The probe is resistive with a pull-up, so a high
+  // voltage means DRY and a low voltage means WET — invert and scale between
+  // the calibration points (see app_config.h), clamped to 0–100 %.
+  // analogReadMilliVolts() applies the eFuse ADC calibration, which keeps the
+  // numbers comparable to M5Stack's own driver and linearises the ADC ends.
+  uint32_t mv = analogReadMilliVolts(_analogPin);
+  constexpr float kDry = AppConfig::kSoilMoistureDryMv;
+  constexpr float kWet = AppConfig::kSoilMoistureWetMv;
+  float moisturePercent = (kDry - mv) / (kDry - kWet) * 100.0f;
+  moisturePercent = constrain(moisturePercent, 0.0f, 100.0f);
 
   out = SensorReading{};
   out.hasSoilMoisture  = true;
   out.soilMoistureRaw  = raw;
+  out.soilMoistureMv   = static_cast<uint16_t>(mv);
   out.soilMoisturePct  = moisturePercent;
   out.soilMoistureDry  = isDry;
 

@@ -157,9 +157,10 @@ void logSensorReadings(const char* header, const SensorReading& data, const char
   if (data.hasPressure)    logf("  pressure:    %.2f hPa", data.pressurePa / 100.0f);
   if (data.hasGas)         logf("  gas:         %.0f Ohm", data.gasResistanceOhm);
   if (data.hasIaq)         logf("  iaq:         %.2f (acc=%u)", data.iaq, static_cast<unsigned>(data.iaqAccuracy));
-  if (data.hasSoilMoisture) logf("  soil:        %.1f %% (raw=%u, dry=%s)",
+  if (data.hasSoilMoisture) logf("  soil:        %.1f %% (raw=%u, %u mV, dry=%s)",
                                   data.soilMoisturePct,
                                   static_cast<unsigned>(data.soilMoistureRaw),
+                                  static_cast<unsigned>(data.soilMoistureMv),
                                   data.soilMoistureDry ? "yes" : "no");
   if (data.hasLux)         logf("  lux:         %.1f", data.lux);
 }
@@ -381,6 +382,7 @@ void handleMqttCommand(const String& topicStr, const String& payloadStr) {
     g_runtimeCfg.telemetryIntervalMs = g_telemetryIntervalMs;
     g_configStore.setTelemetryInterval(g_telemetryIntervalMs);
     g_nextTelemetryAt = millis() + g_telemetryIntervalMs;
+    g_probes.setSampleIntervalMs(g_telemetryIntervalMs);
     char resultJson[48];
     snprintf(resultJson, sizeof(resultJson),
              "{\"telemetryIntervalMs\":%lu}", (unsigned long)g_telemetryIntervalMs);
@@ -749,6 +751,7 @@ void appBegin(const AppUiHooks& hooks) {
   }
 
   bootLog(bootStep, "Detecting + initializing probes");
+  g_probes.setSampleIntervalMs(g_telemetryIntervalMs);
   g_probes.begin();
   for (size_t i = 0; i < g_probes.probeCount(); ++i) {
     auto* p = g_probes.probeAt(i);

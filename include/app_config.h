@@ -87,10 +87,23 @@ constexpr uint8_t  kRgbUnitLedPin       = 17;  // PORT.C data → CoreS3 G17
 constexpr uint8_t  kRgbUnitLedCount     = 60;  // max addressed external chain length
 
 // Soil Moisture probe — M5Stack Unit Earth on CoreS3 PORT.B
-constexpr uint8_t kSoilMoistureAnalogPin   = 8;   // PORT.B AOUT (Analog Output, grey wire)
-constexpr uint8_t kSoilMoistureDigitalPin  = 9;   // PORT.B DOUT (Digital Output, threshold via trim-pot)
+constexpr uint8_t kSoilMoistureAnalogPin   = 8;   // PORT.B AOUT (Analog Output, white wire) -> G8
+constexpr uint8_t kSoilMoistureDigitalPin  = 9;   // PORT.B DOUT (Digital Output, yellow wire) -> G9
 
 #endif
+
+// Soil moisture calibration (both targets).
+// Unit Earth (U019 schematic): probe sits between a 10k pull-up to 3.3V and
+// GND, so AOUT is HIGH when dry and drops as conductivity rises. LM393 DOUT
+// goes HIGH when AOUT is above the trim-pot threshold (= dry).
+// Calibration is in millivolts (analogReadMilliVolts, eFuse-calibrated) and
+// mirrors M5Stack's official UIFlow2 driver defaults
+// (uiflow-micropython/m5stack/libs/unit/earth.py, EarthBase._min/_max):
+//   2900 mV = probe just touching the water surface  -> 0 %
+//   1630 mV = probe fully immersed                   -> 100 %
+// M5 notes the response is not linear across the range.
+constexpr uint16_t kSoilMoistureDryMv = 2900;
+constexpr uint16_t kSoilMoistureWetMv = 1630;
 
 // I2C bus pins — board specific.
 // CoreS3 PORT.A (Grove): SDA=2, SCL=1.
