@@ -19,6 +19,11 @@ constexpr uint32_t kWifiConnectTimeoutMs = 20000;  // mirrors hardcoded 20000 u 
 constexpr uint32_t kWifiReconnectIntervalMs = 30000; // kako često pokušavati WiFi reconnect u loop()
 constexpr uint32_t kStatusHeartbeatMs = 5 * 60 * 1000;
 constexpr bool kEnableWifiProvisioning = true;
+// Saved WiFi unreachable at boot (e.g. device moved) → open the setup portal for
+// this long, then fall back to retrying the saved network.
+constexpr uint32_t kProvisioningFallbackPortalSec = 180;
+// Holding BtnA this long at runtime wipes WiFi credentials and reboots into the portal.
+constexpr uint32_t kWifiResetButtonHoldMs = 5000;
 constexpr uint16_t kMqttDefaultPort = 1883;
 constexpr uint16_t kMqttKeepAliveSec = 60;
 constexpr uint8_t kMqttQos = 1;

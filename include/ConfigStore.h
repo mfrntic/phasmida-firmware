@@ -38,6 +38,7 @@ public:
   void setSoilCalibration(uint16_t dryMv, uint16_t wetMv);
   void clearSoilCalibration();                           // back to compile-time defaults
   void setWifi(const String& ssid, const String& pass);
+  void clearWifi();                                      // forces provisioning portal on next boot
   void setMqttBroker(const String& host, uint16_t port);
   void setTimezone(const String& posixTz);
   String loadTimezone();

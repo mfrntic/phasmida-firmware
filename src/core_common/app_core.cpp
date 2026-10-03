@@ -862,6 +862,27 @@ void appBegin(const AppUiHooks& hooks) {
     wifiOk = g_wifi.connect(g_runtimeCfg.wifiSsid, g_runtimeCfg.wifiPassword, AppConfig::kWifiConnectTimeoutMs);
     if (wifiOk) logLine(String("WiFi: SUCCESS! IP=") + WiFi.localIP().toString());
     else logf("WiFi: FAILED, final status=%d [%s]", WiFi.status(), WifiManager::statusToText(WiFi.status()));
+
+    // Saved network unreachable (device moved, router changed) — headless boards
+    // have no other way back into provisioning, so offer the portal for a while.
+    if (!wifiOk && AppConfig::kEnableWifiProvisioning) {
+      String apName = provisioningApName();
+      logf("WiFi: opening fallback provisioning AP '%s' for %lus",
+           apName.c_str(), static_cast<unsigned long>(AppConfig::kProvisioningFallbackPortalSec));
+      String newSsid;
+      String newPassword;
+      if (g_wifi.startProvisioning(apName, AppConfig::kProvisioningApPassword, newSsid, newPassword,
+                                   AppConfig::kProvisioningFallbackPortalSec)) {
+        g_configStore.setWifi(newSsid, newPassword);
+        g_runtimeCfg.wifiSsid     = newSsid;
+        g_runtimeCfg.wifiPassword = newPassword;
+        logf("WiFi provisioning completed: SSID='%s'", newSsid.c_str());
+      } else {
+        logLine("WiFi: fallback portal closed without new credentials; retrying saved network");
+      }
+      wifiOk = g_wifi.connect(g_runtimeCfg.wifiSsid, g_runtimeCfg.wifiPassword, AppConfig::kWifiConnectTimeoutMs);
+      if (wifiOk) logLine(String("WiFi: SUCCESS! IP=") + WiFi.localIP().toString());
+    }
   }
   logf("WiFi connection result: %s", wifiOk ? "SUCCESS" : "FAILED");
   bootLog(bootStep, String("WiFi phase completed: ") + (wifiOk ? "SUCCESS" : "FAILED"));
@@ -974,6 +995,13 @@ void appUpdate() {
 
   if (g_hooks.onLoop) {
     g_hooks.onLoop();
+  }
+
+  if (AppConfig::kEnableWifiProvisioning && M5.BtnA.pressedFor(AppConfig::kWifiResetButtonHoldMs)) {
+    logLine("WiFi reset requested via long button press; rebooting into provisioning");
+    g_configStore.clearWifi();
+    delay(100);
+    ESP.restart();
   }
 
   if (!g_wifi.isConnected() && !g_runtimeCfg.wifiSsid.isEmpty() && millis() >= g_nextWifiReconnectAt) {

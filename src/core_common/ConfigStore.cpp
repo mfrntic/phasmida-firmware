@@ -88,6 +88,13 @@ void ConfigStore::setWifi(const String& ssid, const String& pass) {
   }
 }
 
+void ConfigStore::clearWifi() {
+  if (_open) {
+    _prefs.remove(AppConfig::kNvsWifiSsid);
+    _prefs.remove(AppConfig::kNvsWifiPass);
+  }
+}
+
 void ConfigStore::setMqttBroker(const String& host, uint16_t port) {
   if (_open) {
     _prefs.putString(AppConfig::kNvsMqttHost, host);

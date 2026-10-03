@@ -45,7 +45,8 @@ bool WifiManager::connect(const String& ssid, const String& password, uint32_t t
   return WiFi.status() == WL_CONNECTED;
 }
 
-bool WifiManager::startProvisioning(const String& apSsid, const String& apPassword, String& outSsid, String& outPassword) {
+bool WifiManager::startProvisioning(const String& apSsid, const String& apPassword, String& outSsid, String& outPassword,
+                                    uint32_t portalTimeoutSec) {
   outSsid = "";
   outPassword = "";
 
@@ -58,7 +59,7 @@ bool WifiManager::startProvisioning(const String& apSsid, const String& apPasswo
   wm.setConfigPortalBlocking(true);
   wm.setBreakAfterConfig(true);
   wm.setConnectTimeout(AppConfig::kWifiConnectTimeoutMs / 1000);
-  wm.setConfigPortalTimeout(0);
+  wm.setConfigPortalTimeout(portalTimeoutSec);
   wm.setWebServerCallback([&wm]() {
     if (wm.server) {
       wm.server->on("/", HTTP_GET, [&wm]() {
